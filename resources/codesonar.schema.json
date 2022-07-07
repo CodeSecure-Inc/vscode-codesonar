@@ -1,0 +1,100 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "CodeSonar Extension for Visual Studio Code Workspace Configuration",
+    "description": "Workspace configuration settings for CodeSonar Extension for Visual Studio Code.",
+    "type": "object",
+    "required": [
+        "projects"
+    ],
+    "properties": {
+        "projects": {
+            "description": "CodeSonar projects associated with the workspace.",
+            "type": "array",
+            "items": {
+                "type": "object",
+                "description": "A CodeSonar project from a CodeSonar hub.",
+                "required": [
+                    "name",
+                    "hub"
+                ],
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Exact name of project on CodeSonar hub."
+                    },
+                    "id": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "description": "Project ID."
+                            },
+                            {
+                                "type": "integer",
+                                "description": "Project ID."
+                            }
+                        ]
+                    },
+                    "baselineAnalysis": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "description": "Exact name of analysis on CodeSonar hub."
+                            },
+                            {
+                                "type": "object",
+                                "description": "Analysis specification object.",
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "description": "Exact name of analysis on CodeSonar hub."
+                                    },
+                                    "id": {
+                                        "anyOf": [
+                                            {
+                                                "type": "string",
+                                                "description": "Analysis ID."
+                                            },
+                                            {
+                                                "type": "integer",
+                                                "description": "Analysis ID."
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        ]
+                    },
+                    "hub": {
+                        "type": "object",
+                        "description": "Hub connection properties.",
+                        "required": [
+                            "address"
+                        ],
+                        "properties": {
+                            "address": {
+                                "type": "string",
+                                "description": "Hub location.  Protocol and port is optional.  E.g. 'https://example.com:7034'."
+                            },
+                            "cacert": {
+                                "type": "string",
+                                "description": "Path to ASCII-encoded (PEM) hub HTTPS server certificate to trust.  Use this option to trust self-signed hub certificates."
+                            },
+                            "hubuser": {
+                                "type": "string",
+                                "description": "User name for hub authentication."
+                            },
+                            "hubcert": {
+                                "type": "string",
+                                "description": "Path to ASCII-encoded (PEM) hub user (public) client certificate for user authentication to hub."
+                            },
+                            "hubkey": {
+                                "type": "string",
+                                "description": "Path to ASCII-encoded (PEM) hub user client certificate private key for user authentication to hub."
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
