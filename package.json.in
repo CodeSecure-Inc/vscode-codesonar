@@ -1,8 +1,8 @@
 {
-    "name": "vscode-codesonar",
+    "name": "$(CSO_VSCODE_PACKAGE_NAME)",
     "displayName": "CodeSonar",
     "description": "CodeSonar Static Analysis",
-    "version": "0.0.1",
+    "version": "$(CSO_VSCODE_VERSION)",
     "publisher": "Grammatech",
     "icon": "resources/grammatech.red-g-border.128x128.png",
     "license": "SEE LICENSE IN LICENSE.txt",
