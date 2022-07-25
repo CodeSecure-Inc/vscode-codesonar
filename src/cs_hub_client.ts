@@ -2,10 +2,11 @@
 import { readFile } from 'fs/promises';
 
 import { 
+    encodeURIQuery,
     HTTPClientConnection,
     HTTPClientConnectionOptions,
     HTTPClientRequestOptions,
-    encodeURIQuery,
+    HTTPReceivedResponse,
 } from './http_client';
 
 
@@ -65,21 +66,42 @@ interface CSHubSignInForm {
     /* eslint-enable @typescript-eslint/naming-convention */
 }
 
+/** Defines the generic result of a Hub API search. */
+interface CSHubApiSearchResults<T> {
+    rows?: Array<T>
+}
+
+/** Defines a subset of project_search JSON row. */
+interface CSHubProjectRow {
+    /* eslint-disable @typescript-eslint/naming-convention */
+    "Project ID"?: number,
+    "Project"?: string,
+    /* eslint-enable @typescript-eslint/naming-convention */
+}
+
+/** Defines a subset of analysis JSON row from project endpoint. */
+interface CSHubAnalysisRow {
+    /* eslint-disable @typescript-eslint/naming-convention */
+    "Analysis"?: string,
+    "url"?: string,
+    /* eslint-enable @typescript-eslint/naming-convention */
+}
+
 /**
  * Encode a string literal term for a CodeSonar search.
  */
 function encodeCSSearchStringLiteral(s: string): string {
-    const QUOTE = '"';
-    const QUOTE_ESC = '\\"';
-    const APOS = "'";
-    const APOS_ESC = "\\'";
-    const ESC = "\\";
-    const ESC_ESC = "\\\\";
+    const QUOTE: string = '"';
+    const QUOTE_ESC: string = '\\"';
+    const APOS: string = "'";
+    const APOS_ESC: string = "\\'";
+    const ESC: string = "\\";
+    const ESC_ESC: string = "\\\\";
 
-    let charUnits = new Array();        
+    let charUnits: string[] = [];
     charUnits.push(QUOTE);
-    for (let i = 0; i < s.length; i++) {
-        let ch = s[i];
+    for (let i: number = 0; i < s.length; i++) {
+        let ch: string = s[i];
         if (ch === ESC) {
             ch = ESC_ESC;
         }
@@ -122,7 +144,7 @@ export class CSHubAddress {
     public readonly port: number|undefined;
 
     constructor(hubAddressString: string) {
-        const PORTSEP = ":";
+        const PORTSEP: string = ":";
         let addressIsUrl: boolean = false;
         if (hubAddressString.toLowerCase().startsWith("http://")) {
             addressIsUrl = true;
@@ -132,7 +154,7 @@ export class CSHubAddress {
         }
         this.hubAddressString = hubAddressString;
         if (addressIsUrl) {
-            let hubUrl = new URL(hubAddressString);
+            let hubUrl: URL = new URL(hubAddressString);
             this.protocol = hubUrl.protocol;
             this.hostname = hubUrl.hostname;
             if (hubUrl.port) {
@@ -146,7 +168,7 @@ export class CSHubAddress {
             }
             else {
                 this.hostname = hubAddressString.substring(0, pos);
-                let portString = hubAddressString.substring(pos + PORTSEP.length);
+                let portString: string = hubAddressString.substring(pos + PORTSEP.length);
                 this.port = parseInt(portString);
             }
         }
@@ -163,7 +185,10 @@ export class CSHubClient {
     private options: CSHubClientConnectionOptions;
     private httpConn: HTTPClientConnection|undefined;
 
-    constructor(hubAddress: string|CSHubAddress, options?: CSHubClientConnectionOptions) {
+    constructor(
+        hubAddress: string|CSHubAddress,
+        options?: CSHubClientConnectionOptions,
+    ) {
         if (typeof hubAddress === 'string') {
             this.hubAddress = new CSHubAddress(hubAddress);
         }
@@ -175,7 +200,7 @@ export class CSHubClient {
 
     /** Get the underlying HTTP connection object.  Test for secure protocol if necessary. */
     async getHttpClientConnection(): Promise<HTTPClientConnection> {
-        const hubOptions = this.options;
+        const hubOptions: CSHubClientConnectionOptions = this.options;
         if (this.httpConn === undefined) {
             let httpOptions: HTTPClientConnectionOptions = {
                 hostname: this.hubAddress.hostname,
@@ -199,9 +224,9 @@ export class CSHubClient {
                 protocol = "https";
                 httpOptions.protocol = protocol;
                 const testResource = "/";
-                let httpConn2 = new HTTPClientConnection(httpOptions);
+                let httpConn2: HTTPClientConnection = new HTTPClientConnection(httpOptions);
                 try {
-                    let resp = await httpConn2.request(testResource, { method: "HEAD" });
+                    let resp: HTTPReceivedResponse = await httpConn2.request(testResource, { method: "HEAD" });
                     await new Promise<void>((resolve, reject) => {
                         resp.body.on('end', resolve);
                         resp.body.on('error', reject);
@@ -227,8 +252,13 @@ export class CSHubClient {
         return this.httpConn;
     }
 
-    private async parseResponseJson(resIO: NodeJS.ReadableStream): Promise<any> {
-        return new Promise<any>((resolve, reject) => {
+    /** Read a JSON stream into a data structure. 
+     * 
+     *  The stream will be parsed as JSON, but the JSON will NOT be validated against T.
+     *  It is the caller's job to validate that the JSON structure matches the type T.
+    */
+    private async parseResponseJson<T>(resIO: NodeJS.ReadableStream): Promise<unknown> {
+        return new Promise<unknown>((resolve, reject) => {
             let chunks: string[] = [];
             resIO.setEncoding("utf8");
             resIO.on('data', (data) => {
@@ -239,9 +269,9 @@ export class CSHubClient {
                 }
             });
             resIO.on('end', () => {
-                let responseText = chunks.join('');
+                let responseText: string = chunks.join('');
                 try {
-                    let jsonObject = JSON.parse(responseText);
+                    let jsonObject: unknown = JSON.parse(responseText);
                     resolve(jsonObject);
                 } catch (e) {
                     console.warn(e);
@@ -305,8 +335,8 @@ export class CSHubClient {
      */
     public async signIn(): Promise<boolean> {
         // Send sign-in POST request to a page that produces a short response:
-        const signInUrlPath = "/";
-        const options = this.options;
+        const signInUrlPath: string = "/";
+        const options: CSHubClientConnectionOptions = this.options;
         return new Promise<boolean>((resolve, reject) => {
             if ((options.auth === undefined || options.auth === "certificate")
                     && (options.hubcert || options.hubkey)) {
@@ -320,7 +350,7 @@ export class CSHubClient {
                         sif_use_tls: "yes",
                         /* eslint-enable @typescript-eslint/naming-convention */
                     };
-                    const sifData = encodeURIQuery(sif);
+                    const sifData: string = encodeURIQuery(sif);
                     console.log("Posting signin data...");
                     // TODO include hubcert and hubkey with POST
                     this.post(signInUrlPath, sifData).then((respBody) => {
@@ -349,7 +379,8 @@ export class CSHubClient {
                     passwordPromise = options.hubpasswd();
                 }
                 else if (options.hubpwfile) {
-                    passwordPromise = readFile(options.hubpwfile, {encoding:"utf-8"});
+                    passwordPromise = readFile(options.hubpwfile, {encoding:"utf-8"}).then(
+                            fileContent => fileContent.trim());
                 }
                 if (passwordPromise === undefined) {
                     reject(new Error("Hub user password was not provided."));
@@ -413,57 +444,62 @@ export class CSHubClient {
         });
     }
 
-    private async fetchJson(resource: string): Promise<any> {
+    /** Fetch an untyped JSON object from the hub. */
+    private async fetchJson(resource: string): Promise<unknown> {
         return this.fetch(resource).then(resIO => this.parseResponseJson(resIO));
     }
 
     public async fetchProjectInfo(searchProjectName?: string): Promise<CSProjectInfo[]> {
-        // TODO: consider generalizing this method to share code with fetchProjectAnalyses
-        let projectSearchPath = "/project_search.json";
-        projectSearchPath += "?sprjgrid=" + encodeURIComponent("[project id.sort:asc][project id.visible:1][path.visible:1]");
+        const prjGridParams: string = "[project id.sort:asc][project id.visible:1][path.visible:1]";
+        let projectSearchPath: string = "/project_search.json";
+        projectSearchPath += `?sprjgrid=${encodeURIComponent(prjGridParams)}`;
         if (searchProjectName) {
-            let projectSearchQuery = encodeURIComponent("project=" + encodeCSSearchStringLiteral(searchProjectName));
+            const projectSearchQuery: string = encodeURIComponent(`project=${encodeCSSearchStringLiteral(searchProjectName)}`);
             projectSearchPath += "&query=" + projectSearchQuery;
         }
-        let respJson = await this.fetchJson(projectSearchPath);
+        const respJson: unknown = await this.fetchJson(projectSearchPath);
+        const respResults: CSHubApiSearchResults<CSHubProjectRow> = respJson as CSHubApiSearchResults<CSHubProjectRow>;
         console.log("Received project JSON");
         let projectInfoArray: CSProjectInfo[] = [];
-        if (respJson && respJson.rows !== undefined) {
-            let respRows: Record<string,string>[] = respJson.rows;
+        if (respResults && respResults.rows !== undefined) {
+            const respRows: CSHubProjectRow[] = respResults.rows;
             // TODO: the "Project ID" number may be too large for javascript.
             //  We cannot parse the project ID from the "url" item,
             //   since the "url" is for the latest analysis; not the project page.
-            // TODO don't use Array.forEach
-            respRows.forEach((row) => {
-                console.log(row);
-                let projectId = row["Project ID"];
-                let projectName = row["Project"];
+            for (let row of respRows) {
+                //console.log(row);
+                const projectIdNum: number|undefined = row["Project ID"];
+                const projectName: string|undefined = row["Project"];
+                let projectId: CSProjectId|undefined;
+                if (projectIdNum !== undefined) {
+                    projectId = projectIdNum.toString();
+                }
                 if (projectId !== undefined && projectName !== undefined) {
                     projectInfoArray.push({
                         id: projectId,
                         name: projectName,
                     });
                 }
-            });
+            }
         }
         return projectInfoArray;
     }
 
     public async fetchAnalysisInfo(analysisId: CSAnalysisId): Promise<CSAnalysisInfo[]> {
-        let analysisListPath = `/project/${encodeURIComponent(analysisId)}.json`;
-        let respJson = await this.fetchJson(analysisListPath);
+        const analysisListPath: string = `/project/${encodeURIComponent(analysisId)}.json`;
+        const respJson: unknown = await this.fetchJson(analysisListPath);
+        const respResults: CSHubApiSearchResults<CSHubAnalysisRow> = respJson as CSHubApiSearchResults<CSHubAnalysisRow>;
         let analysisInfoArray: CSAnalysisInfo[] = [];
-        if (respJson && respJson.rows !== undefined) {
-            let respRows: Record<string,string>[] = respJson.rows;
-            // Parse ID out of "url" item as a string.
-            let analysisIdRegExp = new RegExp("/analysis/(\\d+)\\.json");
-            // TODO don't use Array.forEach
-            respRows.forEach((row) => {
+        if (respResults && respResults.rows !== undefined) {
+            const respRows: CSHubAnalysisRow[] = respResults.rows;
+            // Parse ID out of "url" item as a string:
+            const analysisIdRegExp: RegExp = new RegExp("/analysis/(\\d+)\\.json");
+            for (let row of respRows) {
                 let analysisId: string|undefined;
-                let analysisUrlString = row["url"];
-                let analysisName = row["Analysis"];
+                const analysisUrlString: string|undefined = row["url"];
+                const analysisName: string|undefined = row["Analysis"];
                 if (analysisUrlString) {
-                    let analysisIdMatch = analysisUrlString.match(analysisIdRegExp);
+                    const analysisIdMatch = analysisUrlString.match(analysisIdRegExp);
                     if (analysisIdMatch && analysisIdMatch.length > 1) {
                         analysisId = analysisIdMatch[1];
                     }
@@ -474,7 +510,7 @@ export class CSHubClient {
                         name: analysisName,
                     });
                 }
-            });
+            }
         }
         return analysisInfoArray;
     }
@@ -484,7 +520,7 @@ export class CSHubClient {
             srcRootPath?: string,
             ): Promise<NodeJS.ReadableStream>
     {
-        let sarifAnalysisUrlPath = `/analysis/${encodeURIComponent(analysisId)}-allwarnings.sarif?filter=1`;
+        let sarifAnalysisUrlPath: string = `/analysis/${encodeURIComponent(analysisId)}-allwarnings.sarif?filter=1`;
         if (srcRootPath) {
             sarifAnalysisUrlPath += `&srcroot=${encodeURIComponent(srcRootPath)}`;
         }
@@ -497,9 +533,9 @@ export class CSHubClient {
             ): Promise<NodeJS.ReadableStream>
     {
         // warning_detail_search.sarif is not supported prior to CodeSonar 7.1:
-        const scope = `aid:${headAnalysisId}`;
-        const query = `aid:${headAnalysisId} DIFFERENCE aid:${baseAnalysisId}`;
-        const sarifAnalysisUrlPath = `/warning_detail_search.sarif?scope=${encodeURIComponent(scope)}&query=${encodeURIComponent(query)}&artifacts=0&filter=1`;
+        const scope: string = `aid:${headAnalysisId}`;
+        const query: string = `aid:${headAnalysisId} DIFFERENCE aid:${baseAnalysisId}`;
+        const sarifAnalysisUrlPath: string = `/warning_detail_search.sarif?scope=${encodeURIComponent(scope)}&query=${encodeURIComponent(query)}&artifacts=0&filter=1`;
         return this.fetch(sarifAnalysisUrlPath);
     }
 

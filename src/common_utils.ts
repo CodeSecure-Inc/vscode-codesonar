@@ -5,7 +5,7 @@
  *  @returns empty string if error could not be converted to a string.
  */
 export function errorToString(e: unknown): string {
-    let errorMessage = '';
+    let errorMessage: string = '';
     if (e === undefined) {
         errorMessage = '<UNDEFINED>';
     }

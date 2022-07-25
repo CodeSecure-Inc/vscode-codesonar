@@ -5,7 +5,7 @@ import { errorToString } from './common_utils';
 import { executeCodeSonarVSCodeConfigCreate } from './generate_cs_vscode_config_command';
 import { executeCodeSonarSarifDownload } from './sarif_download_command';
 
-const CS_CONFIG_FILE_NAME = 'codesonar.json';
+const CS_CONFIG_FILE_NAME: string = 'codesonar.json';
 
 export function activate(context: ExtensionContext) {
 	const disposables: Disposable[] = [];

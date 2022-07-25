@@ -5,6 +5,7 @@ import * as path from 'path';
 import {
     window,
     ProgressLocation,
+    QuickPick,
     QuickPickItem,
     SecretStorage,
     Uri,
@@ -26,6 +27,9 @@ import {
 } from './cs_hub_client';
 
 
+const SARIF_EXT_NAME: string = 'sarif';
+const SARIF_EXT: string = '.' + SARIF_EXT_NAME;
+
 interface QuickPickValueItem<T> extends QuickPickItem {
     value: T;
 }
@@ -37,7 +41,7 @@ function formatUserHubAddress(hubAddress: CSHubAddress, username: string): strin
         userHubAddressString = `${hubAddress.protocol}://${userHubAddressString}`;
     }
     if (hubAddress.port !== undefined) {
-        const portString = hubAddress.port.toString();
+        const portString: string = hubAddress.port.toString();
         userHubAddressString = `${userHubAddressString}:${portString}`;
     }
 
@@ -48,8 +52,8 @@ export async function executeCodeSonarSarifDownload(
         configFileName: string,
         secretStorage: SecretStorage,
         ) {
-    const workspaceFolderPath = findActiveVSWorkspaceFolderPath();
-    const resolveFilePath = (filePath: string) => {
+    const workspaceFolderPath: string|undefined = findActiveVSWorkspaceFolderPath();
+    const resolveFilePath: ((filePath:string) => string) = (filePath: string) => {
         // normalize path seps
         let outFilePath = path.normalize(filePath);
         if (!path.isAbsolute(outFilePath) && workspaceFolderPath) {
@@ -59,7 +63,7 @@ export async function executeCodeSonarSarifDownload(
         outFilePath = path.normalize(outFilePath);
         return outFilePath;
     };
-    const config = await csConfig.readCSConfigFile(configFileName, workspaceFolderPath);
+    const config: csConfig.CSConfig = await csConfig.readCSConfigFile(configFileName, workspaceFolderPath);
     let projectConfig: csConfig.CSProjectConfig|undefined;
     if (config.projects && config.projects.length) {
         // TODO user picks the project configuration they want
@@ -134,8 +138,8 @@ export async function executeCodeSonarSarifDownload(
     if (hubUserCertFilePath) {
         // If key file path is not specified, try some default file names:
         if (hubUserCertKeyFilePath === undefined) {
-            let certSuffix = ".cert";
-            let keySuffix = ".key";
+            let certSuffix: string = ".cert";
+            let keySuffix: string = ".key";
             if (hubUserCertFilePath.endsWith(certSuffix)) {
                 hubUserCertKeyFilePath = hubUserCertFilePath.substring(0, hubUserCertFilePath.length - certSuffix.length) + keySuffix;
             }
@@ -168,7 +172,7 @@ export async function executeCodeSonarSarifDownload(
         }
     } else if (hubAddressString && hubUserName && passwordStorageKey) {
         // Make type-checker happy by providing an unconditional string var:
-        const passwordStorageKeyString = passwordStorageKey;
+        const passwordStorageKeyString: string = passwordStorageKey;
         const username: string = hubUserName;
         const address: string = hubAddressString;
         hubClientOptions.hubpasswd = () => new Promise<string>((resolve, reject) => {
@@ -202,7 +206,7 @@ export async function executeCodeSonarSarifDownload(
     }
     else {
         hubClient = new CSHubClient(hubAddressObject, hubClientOptions);
-        let signInSucceeded = false;
+        let signInSucceeded: boolean = false;
         try {
             // signIn will return false if hub returns HTTP 403 Forbidden.
             //  signIn may throw an error if some other signIn problem occurs (e.g. cannot connect to server).
@@ -212,8 +216,8 @@ export async function executeCodeSonarSarifDownload(
             }
         }
         catch (e) {
-            const messageHeader = "CodeSonar hub sign-in error";
-            let errorMessage = errorToString(e);
+            const messageHeader: string = "CodeSonar hub sign-in error";
+            let errorMessage: string = errorToString(e);
             if (errorMessage) {
                 errorMessage = messageHeader + ": " + errorMessage;
             }
@@ -279,7 +283,13 @@ export async function executeCodeSonarSarifDownload(
     }
     let destinationUri: Uri|undefined;
     if (analysisInfo !== undefined) {
-        destinationUri = await showSarifSaveDialog();
+        const defaultFileName: string = analysisInfo.name;
+        let defaultDestinationPath: string = defaultFileName + SARIF_EXT;
+        if (workspaceFolderPath !== undefined) {
+            // TODO: remember previous saved path and compute default based on it.
+            defaultDestinationPath = path.join(workspaceFolderPath, defaultDestinationPath);
+        }
+        destinationUri = await showSarifSaveDialog(defaultDestinationPath);
     }
     if (hubClient !== undefined
         && analysisInfo !== undefined
@@ -297,7 +307,7 @@ async function fetchCSProjectRecords(hubClient: CSHubClient, projectName?: strin
             title: "fetching CodeSonar projects",
         },
         (progress, cancelToken) => {
-            // TODO what happens if fetch fails?
+            // TODO this returns a promise, but could it also raise an error?
             return hubClient.fetchProjectInfo(projectName);
         }).then(resolve, reject);
     });
@@ -313,7 +323,7 @@ async function fetchCSAnalysisRecords(hubClient: CSHubClient, projectId: CSProje
             title: "fetching CodeSonar analyses",
         },
         (progress, cancelToken) => {
-            // TODO what happens if fetch fails?
+            // TODO this returns a promise, but could it also raise an error?
             return hubClient.fetchAnalysisInfo(projectId);
         }).then(resolve, reject);
     });
@@ -324,7 +334,7 @@ async function showProjectQuickPick(projectInfoArray: CSProjectInfo[]): Promise<
     return showQuickPick(
             "Select a Project...",
             projectInfoArray,
-            (p => ({ label: p.id }) ),
+            (p => ({ label: p.id, description: p.name }) ),
             );
 
 }
@@ -344,9 +354,9 @@ async function showQuickPick<T>(
         values: readonly T[],
         value2QuickPickItem: ((v: T) => QuickPickItem),
         ): Promise<T|undefined> {
-    const quickPick = window.createQuickPick();
+    const quickPick: QuickPick<QuickPickItem> = window.createQuickPick();
     quickPick.items = values.map(x => {
-            const item = value2QuickPickItem(x);
+            const item: QuickPickItem = value2QuickPickItem(x);
             return {
                 label: item.label,
                 description: item.description,
@@ -382,16 +392,18 @@ async function showQuickPick<T>(
 
 
 /** Show SaveAs dialog for SARIF download. */
-async function showSarifSaveDialog(): Promise<Uri|undefined> {
+async function showSarifSaveDialog(defaultFilePath: string): Promise<Uri|undefined> {
+    const defaultUri = Uri.file(defaultFilePath);
     return new Promise<Uri|undefined> ((resolve, reject) => {
         window.showSaveDialog({
             filters: {
                 /* eslint-disable @typescript-eslint/naming-convention */
                 'All Files': ['*'],
-                'SARIF': ['sarif'],
+                'SARIF': [SARIF_EXT_NAME],
                 /* eslint-disable @typescript-eslint/naming-convention */
             },
             title: 'Save CodeSonar SARIF analysis results',
+            defaultUri: defaultUri,
         }).then(resolve);
     });
 }
@@ -402,16 +414,16 @@ async function downloadSarifResults(
         analysisInfo: CSAnalysisInfo,
         baseAnalysisInfo?: CSAnalysisInfo,
         ): Promise<void> {
-    const analysisId = analysisInfo.id;
-    const baseAnalysisId = baseAnalysisInfo?.id;
-    const destinationFileName = path.basename(destinationFilePath);
+    const analysisId: CSAnalysisId = analysisInfo.id;
+    const baseAnalysisId: CSAnalysisId|undefined = baseAnalysisInfo?.id;
+    const destinationFileName: string = path.basename(destinationFilePath);
     window.withProgress({
         location: ProgressLocation.Notification,
         title: "Downloading CodeSonar analysis...",
         cancellable: true,
     }, (progress, token) => {
         // TODO: download to temporary location and move it when finished
-        const destinationStream = fs.createWriteStream(destinationFilePath);
+        const destinationStream: NodeJS.WritableStream = fs.createWriteStream(destinationFilePath);
 
         token.onCancellationRequested(() => {
             // TODO abort download.  Cleanup files on disk.
@@ -419,16 +431,16 @@ async function downloadSarifResults(
         progress.report({increment: 0});
         // TODO Report actual progress downloading
         //  This just counts a few seconds and leaves the bar mostly full until the download completes:
-        const delay = 1000;
+        const delay: number = 1000;
         // Total length of progress meter according to documentation:
-        const maxProgressSize = 100;
+        const maxProgressSize: number = 100;
         // Progress meter item where we hang until download completes:
         //  Even though this is 40%, this appears to fill the bar about 80%.
         //   Anything larger and the bar will appear full.
-        const hangingProgressSize = 40;
-        const progressStepCount = 5;
-        const stepSize = hangingProgressSize / progressStepCount;
-        for (let i = 1*stepSize,  t = delay;
+        const hangingProgressSize: number = 40;
+        const progressStepCount: number = 5;
+        const stepSize: number = hangingProgressSize / progressStepCount;
+        for (let i: number = 1*stepSize,  t = delay;
                 i < hangingProgressSize;
                 i += stepSize,  t += delay) {
             ((progressSize, timeout) => {

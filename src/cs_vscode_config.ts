@@ -70,7 +70,7 @@ export async function writeCSConfigFile(
             await mkdir(configFolderPath, { recursive: true });
         }
         catch (e) {
-            let errorMessage = `Could not create directory '${configFolderPath}'`;
+            let errorMessage: string = `Could not create directory '${configFolderPath}'`;
             const errorDetails = errorToString(e);
             if (errorDetails) {
                 errorMessage += ": " + errorDetails;
@@ -78,7 +78,7 @@ export async function writeCSConfigFile(
             throw new Error(errorMessage);
         }
     }
-    const configFilePath = path.join(configFolderPath, configFileName);
+    const configFilePath: string = path.join(configFolderPath, configFileName);
     let configFileStats: Stats|undefined;
     try {
         configFileStats = await stat(configFilePath);
@@ -91,8 +91,8 @@ export async function writeCSConfigFile(
         throw new Error(`File already exists, will not overwrite: '${configFilePath}'`);
     }
 
-    const indentLength = 4;
-    const csConfigString = JSON.stringify(csConfig, null, indentLength);
+    const indentLength: number = 4;
+    const csConfigString: string = JSON.stringify(csConfig, null, indentLength);
     await writeFile(configFilePath, csConfigString);
 
     return configFilePath;
@@ -102,7 +102,7 @@ export async function writeCSConfigFile(
 /** Read codesonar.json file */
 export async function readCSConfigFile(configFileName: string, workspaceFolderPath?: string): Promise<CSConfig> {
     return new Promise<CSConfig>((resolve, reject) => {
-        const configFilePath = findVSConfigFilePath(configFileName, workspaceFolderPath);
+        const configFilePath: string|undefined = findVSConfigFilePath(configFileName, workspaceFolderPath);
         if (configFilePath === undefined) {
             reject(new Error("Could not find .vscode directory."));
         }

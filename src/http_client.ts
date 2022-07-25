@@ -90,7 +90,7 @@ export function encodeURIQuery(queryObject: any): string {
     const queryParts: string[] = [];
     for (let k in queryObject) {
         if (queryObject.hasOwnProperty(k)) {
-            let v: any = queryObject[k];
+            const v: any = queryObject[k];
             let s: string = "";
             if (v === undefined || v === null) {
                 s = "";
@@ -115,7 +115,7 @@ export function encodeURIQuery(queryObject: any): string {
 
 /** Try to ensure URL protocol string matches the form of our HTTP_PROTOCOL, etc. constants. */
 function normalizeProtocolString(protocol: string): string {
-    let protocol2 = protocol.toLowerCase();
+    let protocol2: string = protocol.toLowerCase();
     if (protocol2.endsWith(URL_PROTOCOL_TERMINATOR)) {
         protocol2 = protocol2.substring(0, protocol2.length - URL_PROTOCOL_TERMINATOR.length);
     }
@@ -135,8 +135,8 @@ function urlToHttpOptions(url: URL): HTTPRequestOptions {
         options.path += url.search;
     }
     if (url.username || url.password) {
-        const username = url.username ?? "";
-        const password = url.password ?? "";
+        const username: string = url.username ?? "";
+        const password: string = url.password ?? "";
         options.auth = url.username + URL_PASSWORD_SEP + url.password;
     }
     return options;
@@ -159,9 +159,9 @@ class HTTPCookie {
     public readonly attributes: Record<string,string|undefined>;
 
     constructor(setcookie: string, created?: Date) {
-        const ATTRIB_SEP = ';';
-        const KV_SEP = '=';
-        let attribs = setcookie.split(ATTRIB_SEP);
+        const ATTRIB_SEP: string = ';';
+        const KV_SEP: string = '=';
+        const attribs: string[] = setcookie.split(ATTRIB_SEP);
         this.attributes = {};
         this.created = created;
         this.cookie = '';
@@ -171,17 +171,17 @@ class HTTPCookie {
         this.secure = false;
         if (attribs.length) {
             this.cookie = attribs[0].trim();
-            let kv = this.cookie.split(KV_SEP);
+            const kv: string[] = this.cookie.split(KV_SEP);
             this.name = kv[0];
             if (kv.length > 1) {
                 this.value = kv[1];
             }
         }
         for (let i = 1; i < attribs.length; i++) {
-            let attrib = attribs[i].trim();
-            let kv = attrib.split(KV_SEP);
-            let attribName = kv[0];
-            let attribNameLowerCase = attribName.toLowerCase();
+            const attrib: string = attribs[i].trim();
+            const kv: string[] = attrib.split(KV_SEP);
+            const attribName = kv[0];
+            const attribNameLowerCase = attribName.toLowerCase();
             let attribValue: string|undefined;
             if (kv.length > 1) {
                 attribValue = kv[1];
@@ -200,7 +200,7 @@ class HTTPCookie {
             else if (attribNameLowerCase === "maxage") {
                 if (attribValue)
                 {
-                    let maxAge = parseInt(attribValue);
+                    const maxAge: number = parseInt(attribValue);
                     if (!Number.isNaN(maxAge))
                     {
                         this.maxAge = maxAge;
@@ -215,7 +215,7 @@ class HTTPCookie {
             }
             else if (attribNameLowerCase === "expires") {
                 if (attribValue) {
-                    let expires = new Date(attribValue);
+                    const expires: Date = new Date(attribValue);
                     if (expires.toString() !== "Invalid Date") {
                         this.expires = expires;
                     }
@@ -269,7 +269,7 @@ export class HTTPClientConnection {
         }
         this.hostname = options2.hostname;
         if (options2.protocol !== undefined) {
-            let protocol = normalizeProtocolString(options2.protocol);
+            const protocol: string = normalizeProtocolString(options2.protocol);
             if (protocol === HTTPS_PROTOCOL) {
                 this.protocol = HTTPS_PROTOCOL;
             }
@@ -282,7 +282,7 @@ export class HTTPClientConnection {
         }
         let baseUrlString = this.protocol + URL_PROTOCOL_SEP + this.hostname;
         if (options2.port !== undefined) {
-            let portString;
+            let portString: string;
             if (typeof options2.port === "string") {
                 portString = options2.port;
                 this.port = parseInt(options2.port);
@@ -302,9 +302,9 @@ export class HTTPClientConnection {
 
     /** Remove all cookies from the HTTP client's cookie storage. */
     public clearCookies() {
-        let cookieKeys = Object.keys(this.httpCookies);
-        for (let i = 0; i < cookieKeys.length; i++) {
-            const key = cookieKeys[i];
+        let cookieKeys: string[] = Object.keys(this.httpCookies);
+        for (let i: number = 0; i < cookieKeys.length; i++) {
+            const key: string = cookieKeys[i];
             delete this.httpCookies[key];
         }
     }
@@ -313,20 +313,20 @@ export class HTTPClientConnection {
     private evictExpiredCookies(nowMilliseconds: number) {
         const expiredCookieKeys: string[] = [];
         for (let key in this.httpCookies) {
-            const httpCookie = this.httpCookies[key];
-            let expired = false;
+            const httpCookie: HTTPCookie = this.httpCookies[key];
+            let expired: boolean = false;
             if (httpCookie.maxAge !== undefined
                 && !Number.isNaN(httpCookie.maxAge)
                 && httpCookie.created !== undefined) {
-                let maxAgeMilliseconds = httpCookie.maxAge * 1000;
-                let createdMilliseconds = httpCookie.created.getTime();
+                const maxAgeMilliseconds: number = httpCookie.maxAge * 1000;
+                const createdMilliseconds: number = httpCookie.created.getTime();
                 if (createdMilliseconds + maxAgeMilliseconds > nowMilliseconds)
                 {
                     expired = true;
                 }
             }
             else if (httpCookie.expires) {
-                let expirationMilliseconds = httpCookie.expires.getTime();
+                const expirationMilliseconds: number = httpCookie.expires.getTime();
                 if (expirationMilliseconds > nowMilliseconds) {
                     expired = true;
                 }
@@ -335,8 +335,8 @@ export class HTTPClientConnection {
                 expiredCookieKeys.push(key);
             }
         }
-        for (let i = 0; i < expiredCookieKeys.length; i++) {
-            const key = expiredCookieKeys[i];
+        for (let i: number = 0; i < expiredCookieKeys.length; i++) {
+            const key: string = expiredCookieKeys[i];
             delete this.httpCookies[key];
         };
     }
@@ -345,7 +345,7 @@ export class HTTPClientConnection {
     private getRequestCookies(requestUrl: URL): string[] {
         let cookies: string[] = [];
         for (let key in this.httpCookies) {
-            let httpCookie = this.httpCookies[key];
+            const httpCookie: HTTPCookie = this.httpCookies[key];
             // TODO check path, domain, etc.
             cookies.push(httpCookie.toString());
         }
@@ -372,9 +372,9 @@ export class HTTPClientConnection {
         let httpOptions: HTTPRequestOptions = urlToHttpOptions(targetUrl);
         httpOptions.method = defaultMethod;
         httpOptions.timeout = this.timeout;
-        let nowMilliseconds = Date.now();
+        const nowMilliseconds = Date.now();
         this.evictExpiredCookies(nowMilliseconds);
-        let cookies = this.getRequestCookies(targetUrl);
+        const cookies: string[] = this.getRequestCookies(targetUrl);
         if (options) {
             if (options.method) {
                 httpOptions.method = options.method;
@@ -423,24 +423,23 @@ export class HTTPClientConnection {
             if (targetUrl.origin !== this.baseUrlString) {
                 reject(new Error(`Requested URL origin '${targetUrl.origin}' does not match the HTTP connection to '${this.baseUrlString}`));
             }
-            let responseCallback = (res: http.IncomingMessage) => {
-                let headers: Record<string,string> = {};
+            const responseCallback: ((res: http.IncomingMessage) => void) = (res: http.IncomingMessage) => {
+                const headers: Record<string,string> = {};
                 for (let k in res.headers) {
                     // This should get everything except Set-Cookie headers (which are stored in an array)
                     if (typeof k === "string") {
                         headers[k] = res.headers[k] as string;
                     }
                 }
-                let cookies = res.headers["set-cookie"];
-                if (cookies !== undefined) {
-                    // TODO don't use forEach
-                    cookies.forEach((setcookie) => {
+                const setcookies: string[]|undefined = res.headers["set-cookie"];
+                if (setcookies !== undefined) {
+                    for (let setcookie of setcookies) {
                         let httpCookie = new HTTPCookie(setcookie);
                         // This will replace existing cookies:
                         this.httpCookies[httpCookie.key] = httpCookie;
-                    });
+                    }
                 }
-                let httpStatus = new HTTPStatusError(
+                const httpStatus: HTTPStatusError = new HTTPStatusError(
                     res.statusMessage ?? 'Unspecified HTTP Error',
                     res.statusCode ?? 0,
                 );
@@ -448,7 +447,7 @@ export class HTTPClientConnection {
                 let redirectPromise: Promise<void>|undefined;
                 if (httpStatus.code === 301) {
                     // We cannot redirect from this connection, even if it is just to switch protocol.
-                    let redirectTargetUrlString = res.headers["location"];
+                    const redirectTargetUrlString: string|undefined = res.headers["location"];
                     let redirectTargetUrl: URL|undefined;
                     if (redirectTargetUrlString) {
                         redirectTargetUrl = new URL(redirectTargetUrlString, this.baseUrlString);

@@ -1,16 +1,21 @@
 /** Extra functions for interacting with VS Code. */
 import * as path from 'path';
 //import * as vscode from 'vscode';
-import { workspace, WorkspaceFolder, window } from 'vscode';
+import {
+    TextEditor,
+    window,
+    workspace,
+    WorkspaceFolder,
+} from 'vscode';
 
 
-export const VSCONFIG_FOLDER_NAME = ".vscode";
+export const VSCONFIG_FOLDER_NAME: string = ".vscode";
 
 
 /** Find the workspace directory for the active editor */
 export function findActiveVSWorkspaceFolderPath(): string|undefined {
-    const configFolderName = VSCONFIG_FOLDER_NAME;
-    let textEditor = window.activeTextEditor;
+    const configFolderName: string = VSCONFIG_FOLDER_NAME;
+    let textEditor: TextEditor|undefined = window.activeTextEditor;
     let workspaceFolder: WorkspaceFolder | undefined;
     if (textEditor) {
         workspaceFolder = workspace.getWorkspaceFolder(textEditor.document.uri);
@@ -29,8 +34,8 @@ export function findActiveVSWorkspaceFolderPath(): string|undefined {
 
 /** Find .vscode directory. */
 export function findVSConfigFolderPath(workspaceFolderPath?: string): string|undefined {
-    const configFolderName = VSCONFIG_FOLDER_NAME;
-    let configFolderPath;
+    const configFolderName: string = VSCONFIG_FOLDER_NAME;
+    let configFolderPath: string|undefined;
     if (!workspaceFolderPath) {
         workspaceFolderPath = findActiveVSWorkspaceFolderPath();
     }
@@ -43,7 +48,7 @@ export function findVSConfigFolderPath(workspaceFolderPath?: string): string|und
 /** Find a file relative to the .vscode directory. */
 export function findVSConfigFilePath(configFileRelPath: string, workspaceFolderPath?: string): string|undefined {
     let configFilePath: string|undefined;
-    let configFolderPath = findVSConfigFolderPath(workspaceFolderPath);
+    let configFolderPath: string|undefined = findVSConfigFolderPath(workspaceFolderPath);
     if (configFolderPath !== undefined) {
         configFilePath = path.join(configFolderPath, configFileRelPath);
     }

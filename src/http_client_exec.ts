@@ -16,14 +16,14 @@ function main(
     stderr: NodeJS.WritableStream,
     onExit: (exitCode:number) => void)
 {
-    const endl = '\n';
+    const endl: string = '\n';
     let errorMessage: string|undefined;
     let targetUrlString: string|undefined;
     let cacertFilePath: string|undefined;
 
-    for (let argIndex = 1; !errorMessage && argIndex < argv.length; argIndex++)
+    for (let argIndex: number = 1; !errorMessage && argIndex < argv.length; argIndex++)
     {
-        let arg = argv[argIndex];
+        let arg: string = argv[argIndex];
         if (arg === '--cacert')
         {
             argIndex += 1;
@@ -57,13 +57,13 @@ function main(
     }
     else if (targetUrlString)
     {
-        let targetUrl = new URL(targetUrlString);
+        const targetUrl: URL = new URL(targetUrlString);
         let connOptions: HTTPClientConnectionOptions = {
                 protocol: targetUrl.protocol,
                 hostname: targetUrl.hostname,
                 port: targetUrl.port,
             };
-        let doRequest = (options: HTTPClientConnectionOptions) => {
+        let doRequest: ((options: HTTPClientConnectionOptions) => void) = (options: HTTPClientConnectionOptions) => {
             let httpConn = new HTTPClientConnection(options);
             stderr.write("start request...\n");
             httpConn.request(targetUrl).then(

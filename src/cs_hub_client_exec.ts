@@ -12,8 +12,9 @@ function main(
     stdin: NodeJS.ReadableStream,
     stdout: NodeJS.WritableStream,
     stderr: NodeJS.WritableStream,
-    onExit: (exitCode:number) => void) {
-    const endl = '\n';
+    onExit: (exitCode:number) => void,
+) {
+    const endl: string = '\n';
     let errorMessage: string|undefined;
     let hubAddress: string|undefined;
     let targetUrlString: string|undefined;
@@ -23,7 +24,7 @@ function main(
     let userCertFilePath: string|undefined;
     let userKeyFilePath: string|undefined;
 
-    for (let argIndex = 1; !errorMessage && argIndex < argv.length; argIndex++) {
+    for (let argIndex: number = 1; !errorMessage && argIndex < argv.length; argIndex++) {
         let arg = argv[argIndex];
         if (arg === '--cacert') {
             argIndex += 1;
@@ -97,11 +98,11 @@ function main(
         if (userKeyFilePath) {
             hubOptions.hubkey = userKeyFilePath;
         }
-        const errorHandler = (e: Error|string) => {
+        const errorHandler: ((e: Error|string) => void) = (e: Error|string) => {
             stderr.write(e.toString() + endl);
             onExit(1);
         };
-        const hubClient = new CSHubClient(hubAddress, hubOptions);
+        const hubClient: CSHubClient = new CSHubClient(hubAddress, hubOptions);
         const targetUrlPath: string = targetUrlString;
         hubClient.signIn().then(success => {
             if (!success) {
