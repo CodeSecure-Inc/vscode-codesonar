@@ -1,16 +1,19 @@
 /** Support for codesonar.json file. */
 import { Stats } from 'fs';
-import { mkdir, readFile, stat, writeFile } from 'fs/promises';
+import { access, mkdir, readFile, stat, writeFile } from 'fs/promises';
 import * as path from 'path';
+
+import { workspace, WorkspaceConfiguration } from 'vscode';
 
 import { errorToString } from './common_utils';
 import { findVSConfigFilePath, findVSConfigFolderPath } from './vscode_ex';
 
+type CSHubAuthMode = "anonymous" | "password" | "certificate";
 
 export interface CSHubConfig {
     address?: string;
     cacert?: string;
-    auth?: "anonymous" | "password" | "certificate";
+    auth?: CSHubAuthMode;
     hubuser?: string;
     hubpwfile?: string;
     hubcert?: string;
@@ -31,6 +34,38 @@ export interface CSProjectConfig {
 
 export interface CSConfig {
     projects?: CSProjectConfig[];
+}
+
+/** Get configuration from the VSCode settings.json. */
+export function getCSWorkspaceSettings(): CSProjectConfig|undefined {
+    const wsConfig: WorkspaceConfiguration = workspace.getConfiguration("codesonar");
+    const hubAddress: string|undefined = wsConfig.get<string>("hubAddress");
+    if (hubAddress === undefined || hubAddress.length === 0) {
+        return undefined;
+    }
+    const authString: string|undefined = wsConfig.get<string>("authenticationMode");
+    let authMode: CSHubAuthMode|undefined;
+    if (authString && (
+               authString === "anonymous"
+            || authString === "password"
+            || authString === "certificate"
+        ))
+    {
+        authMode = undefined;
+    }
+    return {
+        name: wsConfig.get<string>("project"),
+        baselineAnalysis: wsConfig.get<string>("baselineAnalysis"),
+        hub: {
+            address: hubAddress,
+            cacert: wsConfig.get<string>("hubAuthorityCertificate"),
+            auth: authMode,
+            hubuser: wsConfig.get<string>("hubUser"),
+            hubpwfile: wsConfig.get<string>("hubPasswordFile"),
+            hubcert: wsConfig.get<string>("hubUserCertificate"),
+            hubkey: wsConfig.get<string>("hubUserCertificateKey"),
+        }
+    };
 }
 
 /** Create a default codesonar.json object */

@@ -20,6 +20,6 @@ Pre-release version.
 
 ## Release Notes
 
-### 0.0.1
+### 0.0.3
 
 Prototype/pre-release.  For demonstration and evaluation only.

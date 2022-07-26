@@ -1,18 +1,26 @@
 import * as fs from 'fs';
-import { readFile } from 'fs/promises';
+import { 
+    access as accessFile,
+    readFile,
+} from 'fs/promises';
 import * as path from 'path';
 
 import {
     window,
+    workspace,
     ProgressLocation,
     QuickPick,
     QuickPickItem,
     SecretStorage,
     Uri,
+    WorkspaceConfiguration,
 } from 'vscode';
 
 import { errorToString } from './common_utils';
-import { findActiveVSWorkspaceFolderPath } from './vscode_ex';
+import { 
+    findActiveVSWorkspaceFolderPath,
+    findVSConfigFilePath,
+} from './vscode_ex';
 import * as csConfig from './cs_vscode_config';
 import { 
     parseCSProjectId,
@@ -63,11 +71,29 @@ export async function executeCodeSonarSarifDownload(
         outFilePath = path.normalize(outFilePath);
         return outFilePath;
     };
-    const config: csConfig.CSConfig = await csConfig.readCSConfigFile(configFileName, workspaceFolderPath);
-    let projectConfig: csConfig.CSProjectConfig|undefined;
-    if (config.projects && config.projects.length) {
-        // TODO user picks the project configuration they want
-        projectConfig = config.projects[0];
+    // This will get a "default" projectConfig based on VSCode settings.
+    //  If there is a codesonar.json file, this default projectConfig will be ignored.
+    let projectConfig: csConfig.CSProjectConfig|undefined = csConfig.getCSWorkspaceSettings();
+    // TODO remove support for codesonar.json configuration
+    const configFilePath: string|undefined = findVSConfigFilePath(configFileName, workspaceFolderPath);
+    if (projectConfig === undefined && configFilePath === undefined) {
+        throw new Error("Could not find CodeSonar hub settings.");
+    }
+    let configFileExists: boolean = false;
+    if (configFilePath !== undefined && configFilePath.length > 0) {
+        try {
+            await accessFile(configFilePath, fs.constants.R_OK);
+            configFileExists = true;
+        } catch {
+            // pass;
+        }
+    }
+    if (configFileExists) {
+        const config: csConfig.CSConfig = await csConfig.readCSConfigFile(configFileName, workspaceFolderPath);
+        if (config.projects && config.projects.length) {
+            // TODO user picks the project configuration they want
+            projectConfig = config.projects[0];
+        }
     }
     let projectName: string|undefined;
     let projectId: CSProjectId|undefined;

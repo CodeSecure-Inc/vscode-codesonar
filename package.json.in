@@ -47,7 +47,90 @@
                 "command": "vscode-codesonar.download-sarif",
                 "title": "CodeSonar: Download SARIF Analysis"
             }
-        ]
+        ],
+        "configuration": {
+            "title": "CodeSonar",
+            "properties": {
+                "codesonar.installDir": {
+                    "type": "string",
+                    "description": "Path to directory where CodeSonar product is installed.",
+                    "default": "",
+                    "order": 1
+                },
+                "codesonar.hubAddress": {
+                    "type": "string",
+                    "description": "CodeSonar hub network address.",
+                    "default": "",
+                    "order": 11
+                },
+                "codesonar.hubAuthorityCertificate": {
+                    "type": "string",
+                    "description": "File path to copy of trusted hub certificate (useful for self-signed certificates).",
+                    "default": "",
+                    "order": 12
+                },
+                "codesonar.authenticationMode": {
+                    "type": "string",
+                    "description": "Authentication mode.",
+                    "default": "",
+                    "order": 13,
+                    "enum": [
+                        "",
+                        "anonymous",
+                        "password",
+                        "certificate"
+                    ],
+                    "enumDescriptions": [
+                        "Default authentication mode.",
+                        "Anonymous user (no authentication).",
+                        "Authenticate with user account name and password.",
+                        "Authenticate with client certificate and key files."
+                    ]
+                },
+                "codesonar.hubUser": {
+                    "type": "string",
+                    "description": "Hub user account name.",
+                    "default": "",
+                    "order": 14
+                },
+                "codesonar.hubPasswordFile": {
+                    "type": "string",
+                    "description": "Optional.  Path to a file containing hub user password.",
+                    "default": "",
+                    "order": 15
+                },
+                "codesonar.hubUserCertificate": {
+                    "type": "string",
+                    "description": "Path to hub user account client certificate ASCII-encoded (PEM) file.",
+                    "default": "",
+                    "order": 16
+                },
+                "codesonar.hubUserCertificateKey": {
+                    "type": "string",
+                    "description": "Path to hub user account client certificate private key ASCII-encoded (PEM) file.",
+                    "default": "",
+                    "order": 17
+                },
+                "codesonar.project": {
+                    "type": "string",
+                    "description": "Name of analysis project on CodeSonar hub.",
+                    "default": "",
+                    "order": 21
+                },
+                "codesonar.projectFile": {
+                    "type": "string",
+                    "description": "Path to CodeSonar analysis project (.prj) file.",
+                    "default": "",
+                    "order": 22
+                },
+                "codesonar.baselineAnalysis": {
+                    "type": "string",
+                    "description": "Name of CodeSonar analysis to use as a baseline when fetching new analysis results.",
+                    "default": "",
+                    "order": 23
+                }
+            }
+        }
     },
     "scripts": {
         "vscode:prepublish": "npm run compile",
