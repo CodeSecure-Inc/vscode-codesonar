@@ -96,7 +96,11 @@ csonar_vscode_extension_vsix = env.NPM(
 
 env.Depends(csonar_vscode_extension_vsix, node_modules)
 
-    
+# Remove all (old) .vsix files when we clean:
+env.Clean(csonar_vscode_extension_vsix, env.Glob(f'*{VSIX_EXT}'))
+
+env.GTDefault(csonar_vscode_extension_vsix)
+
 env.GTCreateFeature(
     'csonar_vscode_extension',
     installed_files=env.GTDefault(csonar_vscode_extension_vsix)
