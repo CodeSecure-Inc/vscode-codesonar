@@ -4,4 +4,8 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
-- Initial release
+## 0.0.2
+* Allow baseline analysis.
+
+## 0.0.1
+* Initial prototype.

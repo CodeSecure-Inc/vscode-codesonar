@@ -91,7 +91,6 @@ csonar_vscode_extension_vsix = env.NPM(
     NPM_COMMAND=[
         'run',
         'vsix',
-        '--',
     ],
 )
 
