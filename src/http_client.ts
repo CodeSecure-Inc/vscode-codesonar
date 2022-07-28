@@ -1,26 +1,23 @@
 /** A high-level, promise-based HTTP client object. */
 import * as http from 'http';
 import * as https from 'https';
-import { stringify } from 'querystring';
-//import * as stream from 'stream';
-//import * as url from 'url';
 
-export const HTTP_PROTOCOL = "http";
-export const HTTPS_PROTOCOL = "https";
+export const HTTP_PROTOCOL: "http" = "http";
+export const HTTPS_PROTOCOL: "https" = "https";
 
-const HTTP_DEFAULT_PORT = 80;
-const HTTPS_DEFAULT_PORT = 443;
+const HTTP_DEFAULT_PORT: number = 80;
+const HTTPS_DEFAULT_PORT: number = 443;
 
-const HTTP_DEFAULT_TIMEOUT = 5*60*1000;
+const HTTP_DEFAULT_TIMEOUT: number = 5*60*1000;
 
-const URL_PROTOCOL_SEP = "://";
-const URL_PROTOCOL_TERMINATOR = ":";
-const URL_PORT_SEP = ":";
-const URL_PASSWORD_SEP = ":";
-const URL_SEARCH_SEP = "?";
-const URL_SEARCH_ITEM_SEP = "&";
-const URL_SEARCH_KEY_SEP = "=";
-const URL_HASH_SEP = "#";
+const URL_PROTOCOL_SEP: string = "://";
+const URL_PROTOCOL_TERMINATOR: string = ":";
+const URL_PORT_SEP: string = ":";
+const URL_PASSWORD_SEP: string = ":";
+const URL_SEARCH_SEP: string = "?";
+const URL_SEARCH_ITEM_SEP: string = "&";
+const URL_SEARCH_KEY_SEP: string = "=";
+const URL_HASH_SEP: string = "#";
 
 export type HTTPProtocol = "http" | "https";
 
@@ -72,6 +69,7 @@ export class HTTPStatusError extends Error {
     constructor(message: string, code: number) {
         super(message);
         this.code = code;
+        this.name = 'HTTPStatusError';
 
         // This is a magic work-around for the way the Error class modifies the prototype.
         //  Without this, the toString() method override would be ignored.
@@ -280,7 +278,7 @@ export class HTTPClientConnection {
                 throw new Error(`Unknown protocol ${options2.protocol}`);
             }
         }
-        let baseUrlString = this.protocol + URL_PROTOCOL_SEP + this.hostname;
+        let baseUrlString: string = this.protocol + URL_PROTOCOL_SEP + this.hostname;
         if (options2.port !== undefined) {
             let portString: string;
             if (typeof options2.port === "string") {
@@ -301,7 +299,7 @@ export class HTTPClientConnection {
     }
 
     /** Remove all cookies from the HTTP client's cookie storage. */
-    public clearCookies() {
+    public clearCookies(): void {
         let cookieKeys: string[] = Object.keys(this.httpCookies);
         for (let i: number = 0; i < cookieKeys.length; i++) {
             const key: string = cookieKeys[i];
@@ -310,7 +308,7 @@ export class HTTPClientConnection {
     }
 
     /** Remove expired cookies from our cookie jar. */
-    private evictExpiredCookies(nowMilliseconds: number) {
+    private evictExpiredCookies(nowMilliseconds: number): void {
         const expiredCookieKeys: string[] = [];
         for (let key in this.httpCookies) {
             const httpCookie: HTTPCookie = this.httpCookies[key];
@@ -361,13 +359,13 @@ export class HTTPClientConnection {
             data?: string|Buffer,
             dataEncoding: BufferEncoding = 'utf8',
             ) : Promise<HTTPReceivedResponse> {
-        const defaultMethod = "GET";
+        const defaultMethod: string = "GET";
         let targetUrl: URL;
         if (typeof resource === "string") {
             targetUrl = new URL(resource, this.baseUrlString);
         }
         else {
-            targetUrl = resource as URL;
+            targetUrl = resource;
         }
         let httpOptions: HTTPRequestOptions = urlToHttpOptions(targetUrl);
         httpOptions.method = defaultMethod;
@@ -419,11 +417,16 @@ export class HTTPClientConnection {
         if (this.clientCertKey) {
             httpsOptions.key = this.clientCertKey;
         }
-        return new Promise<HTTPReceivedResponse>((resolve, reject) => {
+        return new Promise<HTTPReceivedResponse>((
+                resolve: (response: HTTPReceivedResponse) => void,
+                reject: (e: any) => void,
+        ) => {
             if (targetUrl.origin !== this.baseUrlString) {
                 reject(new Error(`Requested URL origin '${targetUrl.origin}' does not match the HTTP connection to '${this.baseUrlString}`));
             }
-            const responseCallback: ((res: http.IncomingMessage) => void) = (res: http.IncomingMessage) => {
+            const responseCallback: ((res: http.IncomingMessage) => void) = (
+                res: http.IncomingMessage
+            ) => {
                 const headers: Record<string,string> = {};
                 for (let k in res.headers) {
                     // This should get everything except Set-Cookie headers (which are stored in an array)

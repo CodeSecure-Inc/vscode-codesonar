@@ -3,9 +3,11 @@
 //import * as process from 'process';
 import { readFile } from 'fs';
 
+import { errorToString } from './common_utils';
 import { 
     HTTPClientConnection,
     HTTPClientConnectionOptions,
+    HTTPReceivedResponse,
 } from './http_client';
 
 
@@ -14,7 +16,7 @@ function main(
     stdin: NodeJS.ReadableStream,
     stdout: NodeJS.WritableStream,
     stderr: NodeJS.WritableStream,
-    onExit: (exitCode:number) => void)
+    onExit: (exitCode: number) => void)
 {
     const endl: string = '\n';
     let errorMessage: string|undefined;
@@ -63,21 +65,27 @@ function main(
                 hostname: targetUrl.hostname,
                 port: targetUrl.port,
             };
-        let doRequest: ((options: HTTPClientConnectionOptions) => void) = (options: HTTPClientConnectionOptions) => {
-            let httpConn = new HTTPClientConnection(options);
-            stderr.write("start request...\n");
-            httpConn.request(targetUrl).then(
-                response => {
-                    stderr.write("read response...\n");
-                    response.body.pipe(stdout);
-                });
-    
-        };
+        let doRequest: ((options: HTTPClientConnectionOptions) => void) = (
+            options: HTTPClientConnectionOptions,
+            ) => {
+                let httpConn: HTTPClientConnection = new HTTPClientConnection(options);
+                stderr.write("start request...\n");
+                httpConn.request(targetUrl).then(
+                    (response: HTTPReceivedResponse): void => {
+                        stderr.write("read response...\n");
+                        response.body.pipe(stdout);
+                        onExit(0);
+                    }).catch((e: any): void => {
+                        const errorMessage: string = errorToString(e);
+                        stderr.write(errorMessage + endl);
+                        onExit(1);
+                    });
+            };
         if (cacertFilePath)
         {
             readFile(
                 cacertFilePath,
-                (err, data) => {
+                (err: NodeJS.ErrnoException|null, data: Buffer): void => {
                     if (err)
                     {
                         stderr.write(err.message + endl);

@@ -12,7 +12,7 @@ function main(
     stdin: NodeJS.ReadableStream,
     stdout: NodeJS.WritableStream,
     stderr: NodeJS.WritableStream,
-    onExit: (exitCode:number) => void,
+    onExit: (exitCode: number) => void,
 ) {
     const endl: string = '\n';
     let errorMessage: string|undefined;
@@ -104,15 +104,17 @@ function main(
         };
         const hubClient: CSHubClient = new CSHubClient(hubAddress, hubOptions);
         const targetUrlPath: string = targetUrlString;
-        hubClient.signIn().then(success => {
+        hubClient.signIn().then((success: boolean): void => {
             if (!success) {
                 errorHandler("Hub sign-in rejected.");
             }
             else {
-                hubClient.fetch(targetUrlPath).then(resIO => {
-                    resIO.setEncoding("utf-8");
-                    resIO.pipe(stdout);
-                }).catch(errorHandler);
+                hubClient.fetch(targetUrlPath).then(
+                    (resIO: NodeJS.ReadableStream): void => {
+                        resIO.setEncoding("utf-8");
+                        resIO.pipe(stdout);
+                        onExit(0);
+                    }).catch(errorHandler);
             }
         }).catch(errorHandler);
     }

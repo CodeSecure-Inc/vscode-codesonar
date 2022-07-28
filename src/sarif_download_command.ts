@@ -7,13 +7,13 @@ import * as path from 'path';
 
 import {
     window,
-    workspace,
+    CancellationToken,
+    Progress,
     ProgressLocation,
     QuickPick,
     QuickPickItem,
     SecretStorage,
     Uri,
-    WorkspaceConfiguration,
 } from 'vscode';
 
 import { errorToString } from './common_utils';
@@ -41,6 +41,8 @@ const SARIF_EXT: string = '.' + SARIF_EXT_NAME;
 interface QuickPickValueItem<T> extends QuickPickItem {
     value: T;
 }
+
+type IncrementalProgress = Progress<{message?: string, increment?: number}>;
 
 /** Formats a string that encodes both the hub address and user name. */
 function formatUserHubAddress(hubAddress: CSHubAddress, username: string): string {
@@ -213,16 +215,17 @@ export async function executeCodeSonarSarifDownload(
                         prompt: `Enter password for CodeSonar hub user '${username}' at '${address}'`,
                         placeHolder: 'password',
                         ignoreFocusOut: true,
-                    }).then((inputValue) => {
-                        if (inputValue === undefined) {
-                            reject(new Error("User cancelled password input."));
-                        }
-                        else {
-                            secretStorage.store(passwordStorageKeyString, inputValue);
-                            resolve(inputValue);
-                        }
-                    },
-                    reject);
+                    }).then(
+                        (inputValue: string|undefined): void => {
+                            if (inputValue === undefined) {
+                                reject(new Error("User cancelled password input."));
+                            }
+                            else {
+                                secretStorage.store(passwordStorageKeyString, inputValue);
+                                resolve(inputValue);
+                            }
+                        },
+                        reject);
                 }
             });
         }); 
@@ -234,6 +237,7 @@ export async function executeCodeSonarSarifDownload(
         hubClient = new CSHubClient(hubAddressObject, hubClientOptions);
         let signInSucceeded: boolean = false;
         try {
+            // TODO: if sign-in failed, we'd like to know exactly why.  Need to get 403 response body.
             // signIn will return false if hub returns HTTP 403 Forbidden.
             //  signIn may throw an error if some other signIn problem occurs (e.g. cannot connect to server).
             signInSucceeded = await hubClient.signIn();
@@ -241,7 +245,7 @@ export async function executeCodeSonarSarifDownload(
                 throw Error("Access forbidden");
             }
         }
-        catch (e) {
+        catch (e: any) {
             const messageHeader: string = "CodeSonar hub sign-in error";
             let errorMessage: string = errorToString(e);
             if (errorMessage) {
@@ -299,7 +303,7 @@ export async function executeCodeSonarSarifDownload(
                 throw new Error("Baseline analysis was not found");
             }
         }
-        else if (baseAnalysisName !== undefined) {
+        else if (baseAnalysisName) { // could be empty string or undefined
             baseAnalysisInfo = analysisInfoArray.find(a => (a.name === baseAnalysisName));
             if (baseAnalysisInfo === undefined) {
                 throw new Error("Baseline analysis was not found");
@@ -309,6 +313,7 @@ export async function executeCodeSonarSarifDownload(
     }
     let destinationUri: Uri|undefined;
     if (analysisInfo !== undefined) {
+        // TODO escape invalid FS chars in analysis name when using it as a file name:
         const defaultFileName: string = analysisInfo.name;
         let defaultDestinationPath: string = defaultFileName + SARIF_EXT;
         if (workspaceFolderPath !== undefined) {
@@ -326,13 +331,19 @@ export async function executeCodeSonarSarifDownload(
 
 async function fetchCSProjectRecords(hubClient: CSHubClient, projectName?: string): Promise<CSProjectInfo[]> {
     // window.withProgress returns Thenable, but an async function must return a Promise.
-    return new Promise<CSProjectInfo[]>((resolve, reject) => {
+    return new Promise<CSProjectInfo[]>((
+            resolve: (projectInfoArray: CSProjectInfo[]) => void,
+            reject: (e: any) => void,
+        ) => {
         window.withProgress<CSProjectInfo[]>({
             cancellable: false,
             location: ProgressLocation.Window,
             title: "fetching CodeSonar projects",
         },
-        (progress, cancelToken) => {
+        (
+            progress: IncrementalProgress,
+            cancelToken: CancellationToken,
+        ) => {
             // TODO this returns a promise, but could it also raise an error?
             return hubClient.fetchProjectInfo(projectName);
         }).then(resolve, reject);
@@ -348,7 +359,10 @@ async function fetchCSAnalysisRecords(hubClient: CSHubClient, projectId: CSProje
             location: ProgressLocation.Window,
             title: "fetching CodeSonar analyses",
         },
-        (progress, cancelToken) => {
+        (
+            progress: IncrementalProgress,
+            cancelToken: CancellationToken,
+        ) => {
             // TODO this returns a promise, but could it also raise an error?
             return hubClient.fetchAnalysisInfo(projectId);
         }).then(resolve, reject);
@@ -360,7 +374,7 @@ async function showProjectQuickPick(projectInfoArray: CSProjectInfo[]): Promise<
     return showQuickPick(
             "Select a Project...",
             projectInfoArray,
-            (p => ({ label: p.id, description: p.name }) ),
+            ((p: CSProjectInfo): QuickPickItem => ({ label: p.id, description: p.name }) ),
             );
 
 }
@@ -370,7 +384,7 @@ async function showAnalysisQuickPick(analysisInfoArray: CSAnalysisInfo[]): Promi
     return showQuickPick(
             "Select an Analysis...",
             analysisInfoArray,
-            (a => ({ label: a.id, description: a.name }) ),
+            ((a: CSAnalysisInfo): QuickPickItem => ({ label: a.id, description: a.name }) ),
             );
 }
 
@@ -390,7 +404,10 @@ async function showQuickPick<T>(
             };
         });
     quickPick.placeholder = placeholder;
-    return new Promise<T|undefined>((resolve, reject) => {
+    return new Promise<T|undefined>((
+        resolve: (value: T|undefined) => void,
+        reject: (e: any) => void,
+    ) => {
         let pickedValue: T|undefined;
         let changeSelection = (selectedItems: readonly QuickPickItem[]) => {
             if (selectedItems.length) {
@@ -443,11 +460,14 @@ async function downloadSarifResults(
     const analysisId: CSAnalysisId = analysisInfo.id;
     const baseAnalysisId: CSAnalysisId|undefined = baseAnalysisInfo?.id;
     const destinationFileName: string = path.basename(destinationFilePath);
-    window.withProgress({
+    await window.withProgress({
         location: ProgressLocation.Notification,
         title: "Downloading CodeSonar analysis...",
         cancellable: true,
-    }, (progress, token) => {
+    }, (
+        progress: IncrementalProgress,
+        token: CancellationToken,
+    ) => {
         // TODO: download to temporary location and move it when finished
         const destinationStream: NodeJS.WritableStream = fs.createWriteStream(destinationFilePath);
 
@@ -469,7 +489,7 @@ async function downloadSarifResults(
         for (let i: number = 1*stepSize,  t = delay;
                 i < hangingProgressSize;
                 i += stepSize,  t += delay) {
-            ((progressSize, timeout) => {
+            ((progressSize: number, timeout: number) => {
                 setTimeout(() => {
                     progress.report({increment: progressSize});
                 }, 1*timeout);    
@@ -486,7 +506,7 @@ async function downloadSarifResults(
             sarifPromise.then((sarifStream) => {
                 sarifStream.pipe(destinationStream
                     ).on('error', reject
-                    ).on('finish', () => {
+                    ).on('finish', (): void => {
                         window.showInformationMessage(`Downloaded CodeSonar Analysis to '${destinationFileName}'`);
                         resolve();
                     });

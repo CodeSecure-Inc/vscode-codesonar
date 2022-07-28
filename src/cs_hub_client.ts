@@ -7,6 +7,7 @@ import {
     HTTPClientConnectionOptions,
     HTTPClientRequestOptions,
     HTTPReceivedResponse,
+    HTTPStatusError,
 } from './http_client';
 
 
@@ -223,11 +224,14 @@ export class CSHubClient {
                 // TODO: if we have a cafile, hubcert, or hubkey, then we can assume HTTPS always.
                 protocol = "https";
                 httpOptions.protocol = protocol;
-                const testResource = "/";
+                const testResource: string = "/";
                 let httpConn2: HTTPClientConnection = new HTTPClientConnection(httpOptions);
                 try {
                     let resp: HTTPReceivedResponse = await httpConn2.request(testResource, { method: "HEAD" });
-                    await new Promise<void>((resolve, reject) => {
+                    await new Promise<void>((
+                            resolve: () => void,
+                            reject: (e: any) => void,
+                        ) => {
                         resp.body.on('end', resolve);
                         resp.body.on('error', reject);
                         resp.body.resume();
@@ -238,7 +242,7 @@ export class CSHubClient {
                         protocol = "http";
                     }
                 }
-                catch (e) {
+                catch (e: any) {
                     console.log(e);
                     // HTTPS did not work.
                     //  This could happen if the HTTPS certificate is not trusted.
@@ -252,33 +256,37 @@ export class CSHubClient {
         return this.httpConn;
     }
 
-    /** Read a JSON stream into a data structure. 
-     * 
-     *  The stream will be parsed as JSON, but the JSON will NOT be validated against T.
-     *  It is the caller's job to validate that the JSON structure matches the type T.
-    */
-    private async parseResponseJson<T>(resIO: NodeJS.ReadableStream): Promise<unknown> {
-        return new Promise<unknown>((resolve, reject) => {
+    /** Read a JSON stream into a data structure. */
+    private async parseResponseJson(resIO: NodeJS.ReadableStream): Promise<unknown> {
+        return new Promise<unknown>((
+            resolve: (jsonObject: unknown) => void,
+            reject: ((e: any) => void),
+        ) => {
             let chunks: string[] = [];
             resIO.setEncoding("utf8");
-            resIO.on('data', (data) => {
+            resIO.on('data', (data: string): void => {
                 try {
                     chunks.push(data);
-                } catch (e) {
+                } catch (e: any) {
                     console.error(e);
                 }
             });
-            resIO.on('end', () => {
+            resIO.on('end', (): void => {
                 let responseText: string = chunks.join('');
+                let okResolve: boolean = false;
+                let jsonObject: unknown;
                 try {
-                    let jsonObject: unknown = JSON.parse(responseText);
-                    resolve(jsonObject);
-                } catch (e) {
+                    jsonObject = JSON.parse(responseText);
+                    okResolve = true;
+                } catch (e: any) {
                     console.warn(e);
                     reject(e);
                 }
+                if (okResolve) {
+                    resolve(jsonObject);
+                }
             });
-            resIO.on('error', (e) => {
+            resIO.on('error', (e: any): void => {
                 console.warn(e);
                 reject(e);
             });
@@ -292,8 +300,12 @@ export class CSHubClient {
             options?: HTTPClientRequestOptions,
             contentType: string = "application/x-www-form-urlencoded",
         ): Promise<NodeJS.ReadableStream> {
-        return new Promise<NodeJS.ReadableStream>((resolve, reject) => {
-            this.getHttpClientConnection().then(httpConn => {
+        return new Promise<NodeJS.ReadableStream>((
+            resolve: (respIO: NodeJS.ReadableStream) => void,
+            reject: (e: any) => void,
+        ) => {
+            this.getHttpClientConnection().then(
+                (httpConn: HTTPClientConnection): Promise<HTTPReceivedResponse> => {
                 const httpOptions: HTTPClientRequestOptions = { 
                     method: "POST",
                     headers: {
@@ -307,13 +319,14 @@ export class CSHubClient {
                 // To avoid this, we must ensure Content-Length header is set.
                 // We assume that the httpConn.request() method will do this for us:
                 return httpConn.request(resource, httpOptions, data);
-            }).then(resp => {
+            }).then((resp: HTTPReceivedResponse): void => {
                 if (resp.status.code === 200) {
                     console.log("Received OK response");
                     resolve(resp.body);
                 }
                 else {
                     console.log(`HTTP Status: ${resp.status}`);
+                    // TODO: sometimes, we will want the response body as a string
                     // Ignore the rest of the response stream:
                     resp.body.resume();
                     reject(resp.status);
@@ -337,9 +350,13 @@ export class CSHubClient {
         // Send sign-in POST request to a page that produces a short response:
         const signInUrlPath: string = "/";
         const options: CSHubClientConnectionOptions = this.options;
-        return new Promise<boolean>((resolve, reject) => {
+        return new Promise<boolean>((
+            resolve: (succeeded: boolean) => void,
+            reject: (e: any) => void,
+        ) => {
             if ((options.auth === undefined || options.auth === "certificate")
-                    && (options.hubcert || options.hubkey)) {
+                    && (options.hubcert || options.hubkey)
+                ) {
                 if (options.hubcert && options.hubkey) {
                     const sif: CSHubSignInForm = {
                         /* eslint-disable @typescript-eslint/naming-convention */
@@ -353,12 +370,14 @@ export class CSHubClient {
                     const sifData: string = encodeURIQuery(sif);
                     console.log("Posting signin data...");
                     // TODO include hubcert and hubkey with POST
-                    this.post(signInUrlPath, sifData).then((respBody) => {
+                    this.post(signInUrlPath, sifData).then((respBody: NodeJS.ReadableStream): void => {
                         // Ignore response body:
                         respBody.resume();
                         resolve(true);
-                    }).catch(e => {
-                        if (e.code !== undefined && e.code === 403) {
+                    }).catch((e: any): void => {
+                        if ((e instanceof HTTPStatusError)
+                                && e.code !== undefined
+                                && e.code === 403) {
                             resolve(false);
                         } else {
                             reject(e);
@@ -385,7 +404,7 @@ export class CSHubClient {
                 if (passwordPromise === undefined) {
                     reject(new Error("Hub user password was not provided."));
                 } else {
-                    passwordPromise.then(password => {
+                    passwordPromise.then((password: string): void => {
                         const sif: CSHubSignInForm = {
                             /* eslint-disable @typescript-eslint/naming-convention */
                             sif_sign_in: "yes",
@@ -396,14 +415,17 @@ export class CSHubClient {
                             sif_password: password,
                             /* eslint-enable @typescript-eslint/naming-convention */
                         };
-                        const sifData = encodeURIQuery(sif);
+                        const sifData: string = encodeURIQuery(sif);
                         console.log("Posting signin data...");
-                        this.post(signInUrlPath, sifData).then((respBody) => {
-                            // Ignore response body:
-                            respBody.resume();
-                            resolve(true);
-                        }).catch(e => {
-                            if (e.code !== undefined && e.code === 403) {
+                        this.post(signInUrlPath, sifData).then(
+                            (respBody: NodeJS.ReadableStream): void => {
+                                // Ignore response body:
+                                respBody.resume();
+                                resolve(true);
+                        }).catch((e: any): void => {
+                            if ((e instanceof HTTPStatusError)
+                                    && e.code !== undefined
+                                    && e.code === 403) {
                                 resolve(false);
                             } else {
                                 reject(e);
@@ -414,9 +436,10 @@ export class CSHubClient {
             }
             else if (options.auth === undefined || options.auth === "anonymous") {
                 // Simply drop existing sign-in cookie
-                this.getHttpClientConnection().then(httpConn => {
-                    this.clearSignInCookies(httpConn);
-                    resolve(true);
+                this.getHttpClientConnection().then(
+                    (httpConn: HTTPClientConnection): void => {
+                        this.clearSignInCookies(httpConn);
+                        resolve(true);
                 });
             }
             else {
@@ -427,26 +450,32 @@ export class CSHubClient {
 
     /** Fetch a raw resource from the hub. */
     public async fetch(resource: string): Promise<NodeJS.ReadableStream> {
-        return new Promise<NodeJS.ReadableStream>((resolve, reject) => {
-            this.getHttpClientConnection().then(httpConn => {
-                console.log(`Fetching resource ${resource}`);
-                return httpConn.request(resource);
-            }).then(resp => {
-                if (resp.status.code === 200) {
-                    console.log("Received OK response");
-                    resolve(resp.body);
-                }
-                else {
-                    console.log(`HTTP Status: ${resp.status}`);
-                    reject(resp.status);
-                }
+        return new Promise<NodeJS.ReadableStream>((
+                resolve: (resIO: NodeJS.ReadableStream) => void,
+                reject: (e: any) => void,
+            ) => {
+                this.getHttpClientConnection().then(
+                    (httpConn: HTTPClientConnection): Promise<HTTPReceivedResponse> => {
+                        console.log(`Fetching resource ${resource}`);
+                            return httpConn.request(resource);
+                }).then(resp => {
+                    if (resp.status.code === 200) {
+                        console.log("Received OK response");
+                        resolve(resp.body);
+                    }
+                    else {
+                        console.log(`HTTP Status: ${resp.status}`);
+                        // TODO: read response body to get error details
+                        reject(resp.status);
+                    }
+                });
             });
-        });
     }
 
     /** Fetch an untyped JSON object from the hub. */
     private async fetchJson(resource: string): Promise<unknown> {
-        return this.fetch(resource).then(resIO => this.parseResponseJson(resIO));
+        return this.fetch(resource).then(
+            (resIO: NodeJS.ReadableStream): unknown => this.parseResponseJson(resIO));
     }
 
     public async fetchProjectInfo(searchProjectName?: string): Promise<CSProjectInfo[]> {

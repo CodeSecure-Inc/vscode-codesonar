@@ -1,6 +1,6 @@
 /** Support for codesonar.json file. */
 import { Stats } from 'fs';
-import { access, mkdir, readFile, stat, writeFile } from 'fs/promises';
+import { mkdir, readFile, stat, writeFile } from 'fs/promises';
 import * as path from 'path';
 
 import { workspace, WorkspaceConfiguration } from 'vscode';
@@ -55,15 +55,15 @@ export function getCSWorkspaceSettings(): CSProjectConfig|undefined {
     }
     return {
         name: wsConfig.get<string>("project"),
-        baselineAnalysis: wsConfig.get<string>("baselineAnalysis"),
+        baselineAnalysis: wsConfig.get<string>("baselineAnalysis") || undefined,  // make empty string undefined
         hub: {
             address: hubAddress,
-            cacert: wsConfig.get<string>("hubAuthorityCertificate"),
+            cacert: wsConfig.get<string>("hubAuthorityCertificate") || undefined,
             auth: authMode,
-            hubuser: wsConfig.get<string>("hubUser"),
-            hubpwfile: wsConfig.get<string>("hubPasswordFile"),
-            hubcert: wsConfig.get<string>("hubUserCertificate"),
-            hubkey: wsConfig.get<string>("hubUserCertificateKey"),
+            hubuser: wsConfig.get<string>("hubUser") || undefined,
+            hubpwfile: wsConfig.get<string>("hubPasswordFile") || undefined,
+            hubcert: wsConfig.get<string>("hubUserCertificate") || undefined,
+            hubkey: wsConfig.get<string>("hubUserCertificateKey") || undefined,
         }
     };
 }
@@ -104,7 +104,7 @@ export async function writeCSConfigFile(
         try {
             await mkdir(configFolderPath, { recursive: true });
         }
-        catch (e) {
+        catch (e: any) {
             let errorMessage: string = `Could not create directory '${configFolderPath}'`;
             const errorDetails = errorToString(e);
             if (errorDetails) {
@@ -118,7 +118,7 @@ export async function writeCSConfigFile(
     try {
         configFileStats = await stat(configFilePath);
     }
-    catch (e) {
+    catch (e: any) {
         // ignore this; assume that the file does not exist.
     }
     if (configFileStats !== undefined) {
@@ -136,24 +136,27 @@ export async function writeCSConfigFile(
 
 /** Read codesonar.json file */
 export async function readCSConfigFile(configFileName: string, workspaceFolderPath?: string): Promise<CSConfig> {
-    return new Promise<CSConfig>((resolve, reject) => {
-        const configFilePath: string|undefined = findVSConfigFilePath(configFileName, workspaceFolderPath);
-        if (configFilePath === undefined) {
-            reject(new Error("Could not find .vscode directory."));
-        }
-        else {
-            readFile(configFilePath, { encoding: "utf-8"}).then(
-                (configText) => {
-                    try {
-                        let csConfig: CSConfig = JSON.parse(configText);
-                        resolve(csConfig);
-                    }
-                    catch (e) {
-                        // Probably a SyntaxError
-                        console.log(e);
-                        reject(e);
-                    }
-                }).catch(reject); // Probably a file read error.
-        }
-    });
+    return new Promise<CSConfig>((
+            resolve: (config: CSConfig) => void,
+            reject: (e: any) => void,
+        ) => {
+            const configFilePath: string|undefined = findVSConfigFilePath(configFileName, workspaceFolderPath);
+            if (configFilePath === undefined) {
+                reject(new Error("Could not find .vscode directory."));
+            }
+            else {
+                readFile(configFilePath, { encoding: "utf-8"}).then(
+                    (configText: string): void => {
+                        try {
+                            let csConfig: CSConfig = JSON.parse(configText);
+                            resolve(csConfig);
+                        }
+                        catch (e: any) {
+                            // Probably a SyntaxError
+                            console.log(e);
+                            reject(e);
+                        }
+                    }).catch(reject); // Probably a file read error.
+            }
+        });
 }
