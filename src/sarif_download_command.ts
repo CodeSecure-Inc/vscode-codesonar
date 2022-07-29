@@ -1,8 +1,4 @@
 import * as fs from 'fs';
-import { 
-    access as accessFile,
-    readFile,
-} from 'fs/promises';
 import * as path from 'path';
 
 import {
@@ -20,7 +16,6 @@ import { errorToString } from './common_utils';
 import { Logger } from './logger';
 import { 
     findActiveVSWorkspaceFolderPath,
-    findVSConfigFilePath,
 } from './vscode_ex';
 import * as csConfig from './cs_vscode_config';
 import { 
@@ -59,11 +54,27 @@ function formatUserHubAddress(hubAddress: CSHubAddress, username: string): strin
     return userHubAddressString;
 }
 
-export async function executeCodeSonarSarifDownload(
+export async function executeCodeSonarFullSarifDownload(
         logger: Logger,
-        configFileName: string,
         secretStorage: SecretStorage,
-        ) {
+    ): Promise<void> {
+    const withAnalysisBaseline: boolean = false;
+    await executeCodeSonarSarifDownload(logger, secretStorage, withAnalysisBaseline);
+}
+
+export async function executeCodeSonarDiffSarifDownload(
+        logger: Logger,
+        secretStorage: SecretStorage,
+    ): Promise<void> {
+    const withAnalysisBaseline: boolean = true;
+    await executeCodeSonarSarifDownload(logger, secretStorage, withAnalysisBaseline);
+}
+
+async function executeCodeSonarSarifDownload(
+        logger: Logger,
+        secretStorage: SecretStorage,
+        withAnalysisBaseline: boolean,
+        ): Promise<void> {
     const workspaceFolderPath: string|undefined = findActiveVSWorkspaceFolderPath();
     const resolveFilePath: ((filePath:string) => string) = (filePath: string) => {
         // normalize path seps
@@ -75,30 +86,7 @@ export async function executeCodeSonarSarifDownload(
         outFilePath = path.normalize(outFilePath);
         return outFilePath;
     };
-    // This will get a "default" projectConfig based on VSCode settings.
-    //  If there is a codesonar.json file, this default projectConfig will be ignored.
     let projectConfig: csConfig.CSProjectConfig|undefined = csConfig.getCSWorkspaceSettings();
-    // TODO remove support for codesonar.json configuration
-    const configFilePath: string|undefined = findVSConfigFilePath(configFileName, workspaceFolderPath);
-    if (projectConfig === undefined && configFilePath === undefined) {
-        throw new Error("Could not find CodeSonar hub settings.");
-    }
-    let configFileExists: boolean = false;
-    if (configFilePath !== undefined && configFilePath.length > 0) {
-        try {
-            await accessFile(configFilePath, fs.constants.R_OK);
-            configFileExists = true;
-        } catch {
-            // pass;
-        }
-    }
-    if (configFileExists) {
-        const config: csConfig.CSConfig = await csConfig.readCSConfigFile(logger, configFileName, workspaceFolderPath);
-        if (config.projects && config.projects.length) {
-            // TODO user picks the project configuration they want
-            projectConfig = config.projects[0];
-        }
-    }
     let projectName: string|undefined;
     let projectId: CSProjectId|undefined;
     let baseAnalysisName: string|undefined;
@@ -146,6 +134,25 @@ export async function executeCodeSonarSarifDownload(
         hubUserPasswordFilePath = hubConfig.hubpwfile;
         hubUserCertFilePath = hubConfig.hubcert;
         hubUserCertKeyFilePath = hubConfig.hubkey;
+    }
+    if (!hubAddressString) {
+        hubAddressString = await window.showInputBox(
+            {
+                ignoreFocusOut: true,
+                prompt: "Hub Address",
+                value: "localhost:7340",
+            }
+        );
+        if (hubAddressString && !hubUserName) {
+            hubUserName = await window.showInputBox(
+                {
+                    ignoreFocusOut: true,
+                    prompt: "Hub User",
+                    value: "",
+                }
+            );
+        }
+        // TODO save hubAddressString and hubUser back to settings
     }
     let hubAddressObject: CSHubAddress|undefined;
     if (hubAddressString) {
@@ -232,10 +239,7 @@ export async function executeCodeSonarSarifDownload(
             });
         }); 
     }
-    if (hubAddressObject === undefined) {
-        throw Error("No hub address found in json config file.");
-    }
-    else {
+    if (hubAddressObject !== undefined) {
         hubClient = new CSHubClient(hubAddressObject, hubClientOptions);
         hubClient.logger = logger;
         let signInSucceeded: boolean = false;
@@ -300,7 +304,11 @@ export async function executeCodeSonarSarifDownload(
     let analysisInfo: CSAnalysisInfo|undefined;
     let baseAnalysisInfo: CSAnalysisInfo|undefined;
     if (analysisInfoArray && analysisInfoArray.length) {
-        if (baseAnalysisId !== undefined) {
+        if (!withAnalysisBaseline) {
+            // We won't need to find a baseline analysis.
+            // pass;
+        }
+        else if (baseAnalysisId !== undefined) {
             baseAnalysisInfo = analysisInfoArray.find(a => (a.id === baseAnalysisId));
             if (baseAnalysisInfo === undefined) {
                 throw new Error("Baseline analysis was not found");
@@ -312,7 +320,19 @@ export async function executeCodeSonarSarifDownload(
                 throw new Error("Baseline analysis was not found");
             }
         }
-        analysisInfo = await showAnalysisQuickPick(analysisInfoArray);
+        else {
+            baseAnalysisInfo = await showAnalysisQuickPick(analysisInfoArray, "Select a Baseline Analysis...");
+            // TODO: show some user feedback to indicate that baseline was chosen,
+            //  the two identical quickpicks shown one after another is going to be confusing.
+        }
+        // Prompt if we didn't need a baseline,
+        //  or if we needed a baseline and we have one.
+        // If we need a baseline and we don't have one,
+        //  then the user must have cancelled,
+        //  so don't annoy them with another prompt.
+        if (!withAnalysisBaseline || baseAnalysisInfo !== undefined) {
+            analysisInfo = await showAnalysisQuickPick(analysisInfoArray, "Select an Analysis...");
+        }
     }
     let destinationUri: Uri|undefined;
     if (analysisInfo !== undefined) {
@@ -347,7 +367,7 @@ async function fetchCSProjectRecords(hubClient: CSHubClient, projectName?: strin
             progress: IncrementalProgress,
             cancelToken: CancellationToken,
         ) => {
-            // TODO this returns a promise, but could it also raise an error?
+            // TODO this returns a promise, but could it also raise an error?  Yes!
             return hubClient.fetchProjectInfo(projectName);
         }).then(resolve, reject);
     });
@@ -383,9 +403,12 @@ async function showProjectQuickPick(projectInfoArray: CSProjectInfo[]): Promise<
 }
 
 /** Show QuickPick widget to allow user to pick an analysis. */
-async function showAnalysisQuickPick(analysisInfoArray: CSAnalysisInfo[]): Promise<CSAnalysisInfo|undefined> {
+async function showAnalysisQuickPick(
+        analysisInfoArray: CSAnalysisInfo[],
+        placeholder: string,
+    ): Promise<CSAnalysisInfo|undefined> {
     return showQuickPick(
-            "Select an Analysis...",
+            placeholder,
             analysisInfoArray,
             ((a: CSAnalysisInfo): QuickPickItem => ({ label: a.id, description: a.name }) ),
             );
