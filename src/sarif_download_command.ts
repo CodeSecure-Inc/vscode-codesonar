@@ -17,6 +17,7 @@ import {
 } from 'vscode';
 
 import { errorToString } from './common_utils';
+import { Logger } from './logger';
 import { 
     findActiveVSWorkspaceFolderPath,
     findVSConfigFilePath,
@@ -59,6 +60,7 @@ function formatUserHubAddress(hubAddress: CSHubAddress, username: string): strin
 }
 
 export async function executeCodeSonarSarifDownload(
+        logger: Logger,
         configFileName: string,
         secretStorage: SecretStorage,
         ) {
@@ -91,7 +93,7 @@ export async function executeCodeSonarSarifDownload(
         }
     }
     if (configFileExists) {
-        const config: csConfig.CSConfig = await csConfig.readCSConfigFile(configFileName, workspaceFolderPath);
+        const config: csConfig.CSConfig = await csConfig.readCSConfigFile(logger, configFileName, workspaceFolderPath);
         if (config.projects && config.projects.length) {
             // TODO user picks the project configuration they want
             projectConfig = config.projects[0];
@@ -206,7 +208,7 @@ export async function executeCodeSonarSarifDownload(
         hubClientOptions.hubpasswd = () => new Promise<string>((resolve, reject) => {
             secretStorage.get(passwordStorageKeyString).then((password) => {
                 if (password !== undefined) {
-                    console.log("Found saved password");
+                    logger.info("Found saved password");
                     resolve(password);
                 }
                 else {
@@ -235,6 +237,7 @@ export async function executeCodeSonarSarifDownload(
     }
     else {
         hubClient = new CSHubClient(hubAddressObject, hubClientOptions);
+        hubClient.logger = logger;
         let signInSucceeded: boolean = false;
         try {
             // TODO: if sign-in failed, we'd like to know exactly why.  Need to get 403 response body.

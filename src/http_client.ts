@@ -2,6 +2,8 @@
 import * as http from 'http';
 import * as https from 'https';
 
+import { Logger } from './logger';
+
 export const HTTP_PROTOCOL: "http" = "http";
 export const HTTPS_PROTOCOL: "https" = "https";
 
@@ -247,6 +249,8 @@ export class HTTPClientConnection {
     private readonly clientCertKey: string|Buffer|undefined;
     private readonly httpCookies: Record<string, HTTPCookie>;
 
+    public logger: Logger|undefined;
+
     constructor(options: HTTPClientConnectionOptions|URL|string) {
         this.protocol = HTTP_PROTOCOL;
         this.port = HTTP_DEFAULT_PORT;
@@ -296,6 +300,12 @@ export class HTTPClientConnection {
         this.clientCert = options2.cert;
         this.clientCertKey = options2.key;
         // TODO consider using incoming URL.pathname as the "base" for outgoing requests.
+    }
+
+    private log(message: string): void {
+        if (this.logger !== undefined) {
+            this.logger.info(message);
+        }
     }
 
     /** Remove all cookies from the HTTP client's cookie storage. */
@@ -460,11 +470,11 @@ export class HTTPClientConnection {
                     }
                     else if (redirectTargetUrl.origin !== this.baseUrlString) {
                         // In this case, we will resolve (not reject) a 301 response.
-                        console.log(`Cannot redirect to '${redirectTargetUrl.href}' since it is not from origin '${this.baseUrlString}'.`);
+                        this.log(`Cannot redirect to '${redirectTargetUrl.href}' since it is not from origin '${this.baseUrlString}'.`);
                     }
                     else {
                         // Recursive call to request the redirect location:
-                        console.log(`HTTP Redirect to: ${redirectTargetUrlString}`);
+                        this.log(`HTTP Redirect to: ${redirectTargetUrlString}`);
                         redirectPromise = this.request(redirectTargetUrl, options).then(resolve).catch(reject);
                     }
                 }

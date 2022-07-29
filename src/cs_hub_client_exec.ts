@@ -103,6 +103,7 @@ function main(
             onExit(1);
         };
         const hubClient: CSHubClient = new CSHubClient(hubAddress, hubOptions);
+        hubClient.logger = console;
         const targetUrlPath: string = targetUrlString;
         hubClient.signIn().then((success: boolean): void => {
             if (!success) {

@@ -4,7 +4,16 @@
  *
  *  @returns empty string if error could not be converted to a string.
  */
-export function errorToString(e: unknown): string {
+export function errorToString(
+        e: unknown,
+        {
+            verbose,
+        }: {
+            verbose: boolean,
+        } = {
+            verbose: true
+        }
+    ): string {
     let errorMessage: string = '';
     if (e === undefined) {
         errorMessage = '<UNDEFINED>';
@@ -20,7 +29,11 @@ export function errorToString(e: unknown): string {
     }
     else if (typeof e === 'object') {
         if (e instanceof Error) {
-            errorMessage = e.message;
+            if (verbose) {
+                errorMessage = `${e.name}: ${e.message}`;
+            } else {
+                errorMessage = e.message;
+            }
         }
         else {
             errorMessage = e.toString();

@@ -68,7 +68,8 @@ function main(
         let doRequest: ((options: HTTPClientConnectionOptions) => void) = (
             options: HTTPClientConnectionOptions,
             ) => {
-                let httpConn: HTTPClientConnection = new HTTPClientConnection(options);
+                const httpConn: HTTPClientConnection = new HTTPClientConnection(options);
+                httpConn.logger = console;
                 stderr.write("start request...\n");
                 httpConn.request(targetUrl).then(
                     (response: HTTPReceivedResponse): void => {
