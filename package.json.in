@@ -27,25 +27,19 @@
         "Static analysis"
     ],
     "activationEvents": [
-        "onCommand:vscode-codesonar.generate-codesonar-json",
-        "onCommand:vscode-codesonar.download-sarif"
+        "onCommand:vscode-codesonar.download-full-sarif",
+        "onCommand:vscode-codesonar.download-diff-sarif"
     ],
     "main": "./out/extension.js",
     "contributes": {
-        "jsonValidation": [
-            {
-                "fileMatch": "codesonar.json",
-                "url": "./resources/codesonar.schema.json"
-            }
-        ],
         "commands": [
             {
-                "command": "vscode-codesonar.generate-codesonar-json",
-                "title": "CodeSonar: Create codesonar.json"
+                "command": "vscode-codesonar.download-full-sarif",
+                "title": "CodeSonar: Download SARIF: Entire Analysis"
             },
             {
-                "command": "vscode-codesonar.download-sarif",
-                "title": "CodeSonar: Download SARIF Analysis"
+                "command": "vscode-codesonar.download-diff-sarif",
+                "title": "CodeSonar: Download SARIF: New Warnings"
             }
         ],
         "configuration": {
