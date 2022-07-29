@@ -6,6 +6,7 @@ import * as path from 'path';
 import { workspace, WorkspaceConfiguration } from 'vscode';
 
 import { errorToString } from './common_utils';
+import { Logger } from './logger';
 import { findVSConfigFilePath, findVSConfigFolderPath } from './vscode_ex';
 
 type CSHubAuthMode = "anonymous" | "password" | "certificate";
@@ -135,7 +136,11 @@ export async function writeCSConfigFile(
 
 
 /** Read codesonar.json file */
-export async function readCSConfigFile(configFileName: string, workspaceFolderPath?: string): Promise<CSConfig> {
+export async function readCSConfigFile(
+        logger: Logger,
+        configFileName: string,
+        workspaceFolderPath?: string,
+    ): Promise<CSConfig> {
     return new Promise<CSConfig>((
             resolve: (config: CSConfig) => void,
             reject: (e: any) => void,
@@ -153,7 +158,7 @@ export async function readCSConfigFile(configFileName: string, workspaceFolderPa
                         }
                         catch (e: any) {
                             // Probably a SyntaxError
-                            console.log(e);
+                            logger.info(errorToString(e));
                             reject(e);
                         }
                     }).catch(reject); // Probably a file read error.

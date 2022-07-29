@@ -1,6 +1,9 @@
 /** An object that facilitates access to a CodeSonar hub. */
 import { readFile } from 'fs/promises';
 
+import { errorToString } from './common_utils';
+import { Logger } from './logger';
+
 import { 
     encodeURIQuery,
     HTTPClientConnection,
@@ -186,6 +189,8 @@ export class CSHubClient {
     private options: CSHubClientConnectionOptions;
     private httpConn: HTTPClientConnection|undefined;
 
+    public logger: Logger|undefined;
+
     constructor(
         hubAddress: string|CSHubAddress,
         options?: CSHubClientConnectionOptions,
@@ -197,6 +202,28 @@ export class CSHubClient {
             this.hubAddress = hubAddress;
         }
         this.options = options ?? {};
+    }
+
+    private errorToString(error: any): string {
+        return errorToString(error, { verbose: true });
+    }
+
+    private log(info: unknown): void {
+        if (this.logger !== undefined) {
+            this.logger.info(this.errorToString(info));
+        }
+    }
+
+    private logWarning(warn: unknown): void {
+        if (this.logger !== undefined) {
+            this.logger.warn(this.errorToString(warn));
+        }
+    }
+
+    private logError(error: unknown): void {
+        if (this.logger !== undefined) {
+            this.logger.error(this.errorToString(error));
+        }
     }
 
     /** Get the underlying HTTP connection object.  Test for secure protocol if necessary. */
@@ -242,8 +269,8 @@ export class CSHubClient {
                         protocol = "http";
                     }
                 }
-                catch (e: any) {
-                    console.log(e);
+                catch (e: unknown) {
+                    this.log(e);
                     // HTTPS did not work.
                     //  This could happen if the HTTPS certificate is not trusted.
                     //  Assume HTTP:
@@ -252,6 +279,7 @@ export class CSHubClient {
             }
             httpOptions.protocol = protocol;
             this.httpConn = new HTTPClientConnection(httpOptions);
+            this.httpConn.logger = this.logger;
         }
         return this.httpConn;
     }
@@ -267,8 +295,8 @@ export class CSHubClient {
             resIO.on('data', (data: string): void => {
                 try {
                     chunks.push(data);
-                } catch (e: any) {
-                    console.error(e);
+                } catch (e: unknown) {
+                    this.logError(e);
                 }
             });
             resIO.on('end', (): void => {
@@ -278,8 +306,8 @@ export class CSHubClient {
                 try {
                     jsonObject = JSON.parse(responseText);
                     okResolve = true;
-                } catch (e: any) {
-                    console.warn(e);
+                } catch (e: unknown) {
+                    this.logWarning(e);
                     reject(e);
                 }
                 if (okResolve) {
@@ -287,7 +315,7 @@ export class CSHubClient {
                 }
             });
             resIO.on('error', (e: any): void => {
-                console.warn(e);
+                this.logWarning(e);
                 reject(e);
             });
         });
@@ -314,18 +342,18 @@ export class CSHubClient {
                         /* eslint-enable @typescript-eslint/naming-convention */
                     },
                 };
-                console.log(`Posting resource to ${resource}`);
+                this.log(`Posting resource to ${resource}`);
                 // The hub will return HTTP 501 if Transfer-Encoding header is set.
                 // To avoid this, we must ensure Content-Length header is set.
                 // We assume that the httpConn.request() method will do this for us:
                 return httpConn.request(resource, httpOptions, data);
             }).then((resp: HTTPReceivedResponse): void => {
                 if (resp.status.code === 200) {
-                    console.log("Received OK response");
+                    this.log("Received OK response");
                     resolve(resp.body);
                 }
                 else {
-                    console.log(`HTTP Status: ${resp.status}`);
+                    this.log(`HTTP Status: ${resp.status}`);
                     // TODO: sometimes, we will want the response body as a string
                     // Ignore the rest of the response stream:
                     resp.body.resume();
@@ -368,7 +396,7 @@ export class CSHubClient {
                         /* eslint-enable @typescript-eslint/naming-convention */
                     };
                     const sifData: string = encodeURIQuery(sif);
-                    console.log("Posting signin data...");
+                    this.log("Posting signin data...");
                     // TODO include hubcert and hubkey with POST
                     this.post(signInUrlPath, sifData).then((respBody: NodeJS.ReadableStream): void => {
                         // Ignore response body:
@@ -416,7 +444,7 @@ export class CSHubClient {
                             /* eslint-enable @typescript-eslint/naming-convention */
                         };
                         const sifData: string = encodeURIQuery(sif);
-                        console.log("Posting signin data...");
+                        this.log("Posting signin data...");
                         this.post(signInUrlPath, sifData).then(
                             (respBody: NodeJS.ReadableStream): void => {
                                 // Ignore response body:
@@ -456,15 +484,15 @@ export class CSHubClient {
             ) => {
                 this.getHttpClientConnection().then(
                     (httpConn: HTTPClientConnection): Promise<HTTPReceivedResponse> => {
-                        console.log(`Fetching resource ${resource}`);
+                        this.log(`Fetching resource ${resource}`);
                             return httpConn.request(resource);
                 }).then(resp => {
                     if (resp.status.code === 200) {
-                        console.log("Received OK response");
+                        this.log("Received OK response");
                         resolve(resp.body);
                     }
                     else {
-                        console.log(`HTTP Status: ${resp.status}`);
+                        this.log(`HTTP Status: ${resp.status}`);
                         // TODO: read response body to get error details
                         reject(resp.status);
                     }
@@ -488,7 +516,7 @@ export class CSHubClient {
         }
         const respJson: unknown = await this.fetchJson(projectSearchPath);
         const respResults: CSHubApiSearchResults<CSHubProjectRow> = respJson as CSHubApiSearchResults<CSHubProjectRow>;
-        console.log("Received project JSON");
+        this.log("Received project JSON");
         let projectInfoArray: CSProjectInfo[] = [];
         if (respResults && respResults.rows !== undefined) {
             const respRows: CSHubProjectRow[] = respResults.rows;
@@ -496,7 +524,7 @@ export class CSHubClient {
             //  We cannot parse the project ID from the "url" item,
             //   since the "url" is for the latest analysis; not the project page.
             for (let row of respRows) {
-                //console.log(row);
+                //this.log(row);
                 const projectIdNum: number|undefined = row["Project ID"];
                 const projectName: string|undefined = row["Project"];
                 let projectId: CSProjectId|undefined;
