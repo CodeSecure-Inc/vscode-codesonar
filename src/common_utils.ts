@@ -42,3 +42,11 @@ export function errorToString(
 
     return errorMessage;
 }
+
+/** Sanitize a string so that it can be used as a file name. */
+export function replaceInvalidFileNameChars(s: string, replacement: string = '_'): string
+{
+    const invalidCharRegExp: RegExp = new RegExp("/\\?%*:|\"<>", "g");
+    let s2: string = s.replace(invalidCharRegExp, replacement);
+    return s2;
+}
