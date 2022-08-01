@@ -1,3 +1,4 @@
+import { strict as assert } from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -12,7 +13,10 @@ import {
     Uri,
 } from 'vscode';
 
-import { errorToString } from './common_utils';
+import { 
+    errorToString,
+    replaceInvalidFileNameChars,
+} from './common_utils';
 import { Logger } from './logger';
 import { 
     findActiveVSWorkspaceFolderPath,
@@ -42,7 +46,7 @@ type IncrementalProgress = Progress<{message?: string, increment?: number}>;
 
 /** Formats a string that encodes both the hub address and user name. */
 function formatUserHubAddress(hubAddress: CSHubAddress, username: string): string {
-    let userHubAddressString: string = `${username}@{$hubAddress.hostname}`;
+    let userHubAddressString: string = `${username}@${hubAddress.hostname}`;
     if (hubAddress.protocol !== undefined) {
         userHubAddressString = `${hubAddress.protocol}://${userHubAddressString}`;
     }
@@ -86,7 +90,8 @@ async function executeCodeSonarSarifDownload(
         outFilePath = path.normalize(outFilePath);
         return outFilePath;
     };
-    let projectConfig: csConfig.CSProjectConfig|undefined = csConfig.getCSWorkspaceSettings();
+    const csConfigIO: csConfig.CSConfigIO = new csConfig.CSConfigIO();
+    let projectConfig: csConfig.CSProjectConfig|undefined = await csConfigIO.readCSProjectConfig();
     let projectName: string|undefined;
     let projectId: CSProjectId|undefined;
     let baseAnalysisName: string|undefined;
@@ -98,6 +103,8 @@ async function executeCodeSonarSarifDownload(
     let hubUserPasswordFilePath: string|undefined;
     let hubUserCertFilePath: string|undefined;
     let hubUserCertKeyFilePath: string|undefined;
+    let inputHubAddressString: string|undefined;
+    let inputHubUserName: string|undefined;
     if (projectConfig) {
         if (projectConfig.name && typeof projectConfig.name === "string") {
             projectName = projectConfig.name;
@@ -136,23 +143,40 @@ async function executeCodeSonarSarifDownload(
         hubUserCertKeyFilePath = hubConfig.hubkey;
     }
     if (!hubAddressString) {
-        hubAddressString = await window.showInputBox(
+        inputHubAddressString = await window.showInputBox(
             {
                 ignoreFocusOut: true,
                 prompt: "Hub Address",
                 value: "localhost:7340",
             }
         );
+        hubAddressString = inputHubAddressString;
         if (hubAddressString && !hubUserName) {
-            hubUserName = await window.showInputBox(
+            // Get a non-empty string that can be used as the name of the anonymous user:
+            const anonymousUserName = csConfigIO.anonymousUserName;
+            inputHubUserName = await window.showInputBox(
                 {
                     ignoreFocusOut: true,
                     prompt: "Hub User",
-                    value: "",
+                    value: anonymousUserName,
                 }
             );
+            if (inputHubUserName === undefined) {
+                // User cancelled the username prompt,
+                //  interpret this to mean that they don't want to connect to the hub at all:
+                hubAddressString = undefined;
+            }
+            else if (inputHubUserName === anonymousUserName) {
+                // empty string is our signal that anonymous auth should be used.
+                hubUserName = "";
+                inputHubUserName = "";
+            }
+            else {
+                hubUserName = inputHubUserName;
+            }
         }
-        // TODO save hubAddressString and hubUser back to settings
+        // We will need to save the "input" data back to the user's settings,
+        //  but we must wait until we know that this data works for hub sign-in.
     }
     let hubAddressObject: CSHubAddress|undefined;
     if (hubAddressString) {
@@ -170,10 +194,12 @@ async function executeCodeSonarSarifDownload(
     let passwordStorageKey: string|undefined;
     if (hubAddressObject && hubUserName) {
         const userHubAddressString = formatUserHubAddress(hubAddressObject, hubUserName);
-        passwordStorageKey = `codesonar:hubpasswd::${userHubAddressString}`;
+        passwordStorageKey = `codesonar/hubpasswd::${userHubAddressString}`;
     }
     if (hubUserCertFilePath) {
-        // If key file path is not specified, try some default file names:
+        // If cert file path is specified, but key file path is not,
+        //  try to guess key file name:
+        // This is a feature intended to make it less cumbersome to specify certificate authentication settings.
         if (hubUserCertKeyFilePath === undefined) {
             let certSuffix: string = ".cert";
             let keySuffix: string = ".key";
@@ -253,7 +279,7 @@ async function executeCodeSonarSarifDownload(
             }
         }
         catch (e: any) {
-            const messageHeader: string = "CodeSonar hub sign-in error";
+            const messageHeader: string = "CodeSonar hub sign-in";
             let errorMessage: string = errorToString(e);
             if (errorMessage) {
                 errorMessage = messageHeader + ": " + errorMessage;
@@ -277,13 +303,17 @@ async function executeCodeSonarSarifDownload(
         projectInfoArray = await fetchCSProjectRecords(hubClient, projectName);
     }
     if (hubClient && projectInfoArray && projectInfoArray.length < 1 && projectName) {
-        // Probably the projectName didn't match any existing projects,
-        //  ask user to pick a project.
+        // We tried to fetch the project by name, but it was not found.
+        //  Get the entire list of projects,
+        //   we will need to ask the user to pick one:
         projectInfoArray = await fetchCSProjectRecords(hubClient);
         if (projectInfoArray.length < 1) {
+            // One way this can happen is if Anonymous is not allowed to see the project list,
+            //  but anonymous authentication was used (perhaps unintentionally).
             window.showInformationMessage("Could not find any analysis projects on CodeSonar hub.");
         }
     }
+    let inputProjectInfo: CSProjectInfo|undefined;
     let projectInfo: CSProjectInfo|undefined;
     if (projectInfoArray && projectInfoArray.length === 1) {
         // TODO: what if the hub has exactly one project,
@@ -292,7 +322,8 @@ async function executeCodeSonarSarifDownload(
         projectInfo = projectInfoArray[0];
     }
     else if (projectInfoArray && projectInfoArray.length > 1) {
-        projectInfo = await showProjectQuickPick(projectInfoArray);
+        inputProjectInfo = await showProjectQuickPick(projectInfoArray);
+        projectInfo = inputProjectInfo;
     }
     if (!projectId && projectInfo) {
         projectId = projectInfo.id;
@@ -307,6 +338,11 @@ async function executeCodeSonarSarifDownload(
         if (!withAnalysisBaseline) {
             // We won't need to find a baseline analysis.
             // pass;
+        }
+        // If there is only one available analysis on the hub,
+        //  then we won't be able to compare two analyses.
+        else if (analysisInfoArray.length === 1) {
+            throw new Error("Not enough analyses were found on the hub to do a baseline comparison.");
         }
         else if (baseAnalysisId !== undefined) {
             baseAnalysisInfo = analysisInfoArray.find(a => (a.id === baseAnalysisId));
@@ -325,19 +361,56 @@ async function executeCodeSonarSarifDownload(
             // TODO: show some user feedback to indicate that baseline was chosen,
             //  the two identical quickpicks shown one after another is going to be confusing.
         }
+        let targetAnalysisInfoArray: CSAnalysisInfo[] = analysisInfoArray;
+        if (baseAnalysisInfo !== undefined) {
+            targetAnalysisInfoArray = [];
+            for (analysisInfo of analysisInfoArray) {
+                if (analysisInfo.id !== baseAnalysisInfo.id) {
+                    targetAnalysisInfoArray.push(analysisInfo);
+                }
+            }
+        }
         // Prompt if we didn't need a baseline,
         //  or if we needed a baseline and we have one.
         // If we need a baseline and we don't have one,
         //  then the user must have cancelled,
         //  so don't annoy them with another prompt.
-        if (!withAnalysisBaseline || baseAnalysisInfo !== undefined) {
-            analysisInfo = await showAnalysisQuickPick(analysisInfoArray, "Select an Analysis...");
+        if (targetAnalysisInfoArray.length < 1) {
+            // We check that some analyses were found prior to getting here,
+            //  and we check that there are many analyses prior to filtering out the baseline analysis,
+            //  so we should never hit this case:
+            assert.fail("Analyses were expected, but none were found");
+        }
+        else if (!withAnalysisBaseline || baseAnalysisInfo !== undefined) {
+            analysisInfo = await showAnalysisQuickPick(targetAnalysisInfoArray, "Select an Analysis...");
         }
     }
     let destinationUri: Uri|undefined;
     if (analysisInfo !== undefined) {
-        // TODO escape invalid FS chars in analysis name when using it as a file name:
-        const defaultFileName: string = analysisInfo.name;
+        // If the user gets this far, and if we prompted them to choose some settings,
+        //   then save their settings:
+        //  We could save these settings at other stages of the prompt sequence.
+        //   Saving settings at this stage attempts to strike a balance 
+        //   between saving settings that are known to work
+        //   and not saving settings that the user wants to keep.
+        let writeCount: number = 0;
+        if (inputHubAddressString) {
+            await csConfigIO.writeHubAddress(inputHubAddressString);
+            writeCount += 1;
+            if (inputHubUserName !== undefined) {
+                await csConfigIO.writeHubUserName(inputHubUserName);
+                writeCount += 1;
+            }
+        }
+        if (inputProjectInfo !== undefined) {
+            await csConfigIO.writeProjectName(inputProjectInfo.name);
+            writeCount += 1;
+        }
+        if (writeCount > 0) {
+            window.showInformationMessage("CodeSonar settings have been saved.");
+        }
+
+        const defaultFileName: string = replaceInvalidFileNameChars(analysisInfo.name);
         let defaultDestinationPath: string = defaultFileName + SARIF_EXT;
         if (workspaceFolderPath !== undefined) {
             // TODO: remember previous saved path and compute default based on it.
@@ -347,18 +420,14 @@ async function executeCodeSonarSarifDownload(
     }
     if (hubClient !== undefined
         && analysisInfo !== undefined
-        && destinationUri !== undefined) {
+        && destinationUri !== undefined
+    ) {
         await downloadSarifResults(hubClient, destinationUri.fsPath, analysisInfo, baseAnalysisInfo);
-    }  
+    }
 }
 
 async function fetchCSProjectRecords(hubClient: CSHubClient, projectName?: string): Promise<CSProjectInfo[]> {
-    // window.withProgress returns Thenable, but an async function must return a Promise.
-    return new Promise<CSProjectInfo[]>((
-            resolve: (projectInfoArray: CSProjectInfo[]) => void,
-            reject: (e: any) => void,
-        ) => {
-        window.withProgress<CSProjectInfo[]>({
+    return await window.withProgress<CSProjectInfo[]>({
             cancellable: false,
             location: ProgressLocation.Window,
             title: "fetching CodeSonar projects",
@@ -369,15 +438,12 @@ async function fetchCSProjectRecords(hubClient: CSHubClient, projectName?: strin
         ) => {
             // TODO this returns a promise, but could it also raise an error?  Yes!
             return hubClient.fetchProjectInfo(projectName);
-        }).then(resolve, reject);
-    });
+        });   
 }
 
 /** Request list of analyses from the hub. */
 async function fetchCSAnalysisRecords(hubClient: CSHubClient, projectId: CSProjectId): Promise<CSAnalysisInfo[]> {
-    // window.withProgress returns Thenable, but an async function must return a Promise.
-    return new Promise<CSProjectInfo[]>((resolve, reject) => {
-        window.withProgress<CSProjectInfo[]>({
+    return await window.withProgress<CSProjectInfo[]>({
             cancellable: false,
             location: ProgressLocation.Window,
             title: "fetching CodeSonar analyses",
@@ -388,16 +454,33 @@ async function fetchCSAnalysisRecords(hubClient: CSHubClient, projectId: CSProje
         ) => {
             // TODO this returns a promise, but could it also raise an error?
             return hubClient.fetchAnalysisInfo(projectId);
-        }).then(resolve, reject);
-    });
+        });
 }
 
 /** Show QuickPick widget to allow user to pick an analysis project. */
 async function showProjectQuickPick(projectInfoArray: CSProjectInfo[]): Promise<CSProjectInfo|undefined> {
+    // case-insenstive sorting collator:
+    const collatorOptions: Intl.CollatorOptions = { usage: "sort", sensitivity: "accent" };
+    const collator: Intl.Collator = new Intl.Collator(undefined, collatorOptions);
+    let sortedProjectInfoArray: CSProjectInfo[] = Array.from(projectInfoArray);
+    sortedProjectInfoArray.sort(
+        (p1: CSProjectInfo, p2: CSProjectInfo): number => {
+            const lc: number = collator.compare(p1.name, p2.name);
+            if (lc !== 0) {
+                return lc;
+            }
+            else if (p1.id > p2.id) {
+                return 1;
+            }
+            else if (p1.id < p2.id) {
+                return -1;
+            }
+            return 0;
+        });
     return showQuickPick(
             "Select a Project...",
-            projectInfoArray,
-            ((p: CSProjectInfo): QuickPickItem => ({ label: p.id, description: p.name }) ),
+            sortedProjectInfoArray,
+            ((p: CSProjectInfo): QuickPickItem => ({ label: p.name, description: `/project/${p.id}` }) ),
             );
 
 }
@@ -410,7 +493,7 @@ async function showAnalysisQuickPick(
     return showQuickPick(
             placeholder,
             analysisInfoArray,
-            ((a: CSAnalysisInfo): QuickPickItem => ({ label: a.id, description: a.name }) ),
+            ((a: CSAnalysisInfo): QuickPickItem => ({ label: a.name, description: `/analysis/${a.id}` }) ),
             );
 }
 
@@ -463,8 +546,7 @@ async function showQuickPick<T>(
 /** Show SaveAs dialog for SARIF download. */
 async function showSarifSaveDialog(defaultFilePath: string): Promise<Uri|undefined> {
     const defaultUri = Uri.file(defaultFilePath);
-    return new Promise<Uri|undefined> ((resolve, reject) => {
-        window.showSaveDialog({
+    return await window.showSaveDialog({
             filters: {
                 /* eslint-disable @typescript-eslint/naming-convention */
                 'All Files': ['*'],
@@ -473,8 +555,7 @@ async function showSarifSaveDialog(defaultFilePath: string): Promise<Uri|undefin
             },
             title: 'Save CodeSonar SARIF analysis results',
             defaultUri: defaultUri,
-        }).then(resolve);
-    });
+        });
 }
 
 async function downloadSarifResults(
