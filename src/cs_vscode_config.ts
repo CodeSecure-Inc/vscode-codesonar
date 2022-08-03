@@ -9,6 +9,9 @@ import { errorToString } from './common_utils';
 import { Logger } from './logger';
 import { findVSConfigFilePath, findVSConfigFolderPath } from './vscode_ex';
 
+import { CSHubAddress } from './cs_hub_client';
+
+
 const CONFIG_SECTION: string = "codesonar";
 const CONFIG_HUB_ADDR: string = "hubAddress";
 const CONFIG_HUB_CACERT: string = "hubAuthorityCertificate";
@@ -48,14 +51,31 @@ export interface CSConfig {
     projects?: CSProjectConfig[];
 }
 
-export function saveHubAddress(hubAddress: string) {
-    const wsConfig: WorkspaceConfiguration = workspace.getConfiguration(CONFIG_SECTION);
-    wsConfig.update(CONFIG_HUB_ADDR, hubAddress);
+/** Formats a string that encodes both the hub address and user name. */
+function formatUserHubAddress(hubAddress: CSHubAddress, hubUserName: string): string {
+    let userHubAddressString: string = `${hubUserName}@${hubAddress.hostname}`;
+    if (hubAddress.protocol !== undefined) {
+        userHubAddressString = `${hubAddress.protocol}://${userHubAddressString}`;
+    }
+    if (hubAddress.port !== undefined) {
+        const portString: string = hubAddress.port.toString();
+        userHubAddressString = `${userHubAddressString}:${portString}`;
+    }
+
+    return userHubAddressString;
 }
+
+/** Format a string that can be used as a lookup key for a hub user password in a password store. */
+export function formatHubUserPasswordStorageKey(hubAddress: CSHubAddress, hubUserName: string): string {
+    const userHubAddressString = formatUserHubAddress(hubAddress, hubUserName);
+    return `codesonar/hubpasswd::${userHubAddressString}`;
+}
+
 
 /** Provides access to CodeSonar extension configuration settings. */
 export class CSConfigIO {
     private wsConfig: WorkspaceConfiguration;
+    public readonly defaultHubAddressString: string = "localhost:7340";
     /** A non-empty string that represents the hub's anonymous user. */
     public readonly anonymousUserName: string;
 

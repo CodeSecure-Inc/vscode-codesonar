@@ -28,7 +28,8 @@
     ],
     "activationEvents": [
         "onCommand:vscode-codesonar.download-full-sarif",
-        "onCommand:vscode-codesonar.download-diff-sarif"
+        "onCommand:vscode-codesonar.download-diff-sarif",
+        "onCommand:vscode-codesonar.remove-hubuser-password"
     ],
     "main": "./out/extension.js",
     "contributes": {
@@ -40,6 +41,10 @@
             {
                 "command": "vscode-codesonar.download-diff-sarif",
                 "title": "CodeSonar: Download SARIF: New Warnings"
+            },
+            {
+                "command": "vscode-codesonar.remove-hubuser-password",
+                "title": "CodeSonar: Clear hub user password"
             }
         ],
         "configuration": {

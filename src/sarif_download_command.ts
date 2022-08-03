@@ -44,38 +44,32 @@ interface QuickPickValueItem<T> extends QuickPickItem {
 
 type IncrementalProgress = Progress<{message?: string, increment?: number}>;
 
-/** Formats a string that encodes both the hub address and user name. */
-function formatUserHubAddress(hubAddress: CSHubAddress, username: string): string {
-    let userHubAddressString: string = `${username}@${hubAddress.hostname}`;
-    if (hubAddress.protocol !== undefined) {
-        userHubAddressString = `${hubAddress.protocol}://${userHubAddressString}`;
-    }
-    if (hubAddress.port !== undefined) {
-        const portString: string = hubAddress.port.toString();
-        userHubAddressString = `${userHubAddressString}:${portString}`;
-    }
-
-    return userHubAddressString;
+/** Format a string that can be used as a lookup key for a hub user password in a password store. */
+function formatHubUserPasswordStorageKey(hubAddress: CSHubAddress, hubUserName: string): string {
+    return csConfig.formatHubUserPasswordStorageKey(hubAddress, hubUserName);
 }
 
 export async function executeCodeSonarFullSarifDownload(
         logger: Logger,
+        csConfigIO: csConfig.CSConfigIO,
         secretStorage: SecretStorage,
     ): Promise<void> {
     const withAnalysisBaseline: boolean = false;
-    await executeCodeSonarSarifDownload(logger, secretStorage, withAnalysisBaseline);
+    await executeCodeSonarSarifDownload(logger, csConfigIO, secretStorage, withAnalysisBaseline);
 }
 
 export async function executeCodeSonarDiffSarifDownload(
         logger: Logger,
+        csConfigIO: csConfig.CSConfigIO,
         secretStorage: SecretStorage,
     ): Promise<void> {
     const withAnalysisBaseline: boolean = true;
-    await executeCodeSonarSarifDownload(logger, secretStorage, withAnalysisBaseline);
+    await executeCodeSonarSarifDownload(logger, csConfigIO, secretStorage, withAnalysisBaseline);
 }
 
 async function executeCodeSonarSarifDownload(
         logger: Logger,
+        csConfigIO: csConfig.CSConfigIO,
         secretStorage: SecretStorage,
         withAnalysisBaseline: boolean,
         ): Promise<void> {
@@ -90,7 +84,6 @@ async function executeCodeSonarSarifDownload(
         outFilePath = path.normalize(outFilePath);
         return outFilePath;
     };
-    const csConfigIO: csConfig.CSConfigIO = new csConfig.CSConfigIO();
     let projectConfig: csConfig.CSProjectConfig|undefined = await csConfigIO.readCSProjectConfig();
     let projectPath: string|undefined;
     let projectId: CSProjectId|undefined;
@@ -143,11 +136,12 @@ async function executeCodeSonarSarifDownload(
         hubUserCertKeyFilePath = hubConfig.hubkey;
     }
     if (!hubAddressString) {
+        const defaultHubAddressString = csConfigIO.defaultHubAddressString;
         inputHubAddressString = await window.showInputBox(
             {
                 ignoreFocusOut: true,
                 prompt: "Hub Address",
-                value: "localhost:7340",
+                value: defaultHubAddressString,
             }
         );
         hubAddressString = inputHubAddressString;
@@ -193,8 +187,7 @@ async function executeCodeSonarSarifDownload(
     }
     let passwordStorageKey: string|undefined;
     if (hubAddressObject && hubUserName) {
-        const userHubAddressString = formatUserHubAddress(hubAddressObject, hubUserName);
-        passwordStorageKey = `codesonar/hubpasswd::${userHubAddressString}`;
+        passwordStorageKey = formatHubUserPasswordStorageKey(hubAddressObject, hubUserName);
     }
     if (hubUserCertFilePath) {
         // If cert file path is specified, but key file path is not,
@@ -231,7 +224,7 @@ async function executeCodeSonarSarifDownload(
         //   By deleting the password from storage when they change to password file auth in one window,
         //    we will cause them to be prompted for a password again in the other window.
         if (passwordStorageKey) {
-            secretStorage.delete(passwordStorageKey);
+            await secretStorage.delete(passwordStorageKey);
         }
     } else if (hubAddressString && hubUserName && passwordStorageKey) {
         // Make type-checker happy by providing an unconditional string var:
@@ -256,8 +249,12 @@ async function executeCodeSonarSarifDownload(
                                 reject(new Error("User cancelled password input."));
                             }
                             else {
-                                secretStorage.store(passwordStorageKeyString, inputValue);
-                                resolve(inputValue);
+                                secretStorage.store(passwordStorageKeyString, inputValue).then(
+                                    (): void => {
+                                        resolve(inputValue);
+                                    },
+                                    reject,
+                                );
                             }
                         },
                         reject);
@@ -307,11 +304,6 @@ async function executeCodeSonarSarifDownload(
         //  Get the entire list of projects,
         //   we will need to ask the user to pick one:
         projectInfoArray = await fetchCSProjectRecords(hubClient);
-        if (projectInfoArray.length < 1) {
-            // One way this can happen is if Anonymous is not allowed to see the project list,
-            //  but anonymous authentication was used (perhaps unintentionally).
-            window.showInformationMessage("Could not find any analysis projects on CodeSonar hub.");
-        }
     }
     let inputProjectInfo: CSProjectInfo|undefined;
     let projectInfo: CSProjectInfo|undefined;
@@ -324,6 +316,11 @@ async function executeCodeSonarSarifDownload(
     else if (projectInfoArray && projectInfoArray.length > 1) {
         inputProjectInfo = await showProjectQuickPick(projectInfoArray);
         projectInfo = inputProjectInfo;
+    }
+    else if (projectInfoArray !== undefined && projectInfoArray.length < 1) {
+        // One way this can happen is if Anonymous is not allowed to see the project list,
+        //  but anonymous authentication was used (perhaps unintentionally).
+        window.showInformationMessage("Could not find any analysis projects on CodeSonar hub.");
     }
     if (!projectId && projectInfo) {
         projectId = projectInfo.id;
