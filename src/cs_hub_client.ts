@@ -21,6 +21,7 @@ export type CSProjectId = CSHubRecordId;
 export interface CSProjectInfo {
     id: CSProjectId;
     name: string;
+    path: string;
 }
 
 export interface CSAnalysisInfo {
@@ -80,6 +81,7 @@ interface CSHubProjectRow {
     /* eslint-disable @typescript-eslint/naming-convention */
     "Project ID"?: number,
     "Project"?: string,
+    "Path"?: string,
     /* eslint-enable @typescript-eslint/naming-convention */
 }
 
@@ -506,12 +508,13 @@ export class CSHubClient {
             (resIO: NodeJS.ReadableStream): unknown => this.parseResponseJson(resIO));
     }
 
-    public async fetchProjectInfo(searchProjectName?: string): Promise<CSProjectInfo[]> {
+    public async fetchProjectInfo(searchProjectPath?: string): Promise<CSProjectInfo[]> {
         const prjGridParams: string = "[project id.sort:asc][project id.visible:1][path.visible:1]";
         let projectSearchPath: string = "/project_search.json";
         projectSearchPath += `?sprjgrid=${encodeURIComponent(prjGridParams)}`;
-        if (searchProjectName) {
-            const projectSearchQuery: string = encodeURIComponent(`project=${encodeCSSearchStringLiteral(searchProjectName)}`);
+        if (searchProjectPath) {
+            const projectSearchLiteral: string = encodeCSSearchStringLiteral(searchProjectPath);
+            const projectSearchQuery: string = encodeURIComponent(`ptree_path=${projectSearchLiteral}`);
             projectSearchPath += "&query=" + projectSearchQuery;
         }
         const respJson: unknown = await this.fetchJson(projectSearchPath);
@@ -527,14 +530,19 @@ export class CSHubClient {
                 //this.log(row);
                 const projectIdNum: number|undefined = row["Project ID"];
                 const projectName: string|undefined = row["Project"];
+                const projectPath: string|undefined = row["Path"];
                 let projectId: CSProjectId|undefined;
                 if (projectIdNum !== undefined) {
                     projectId = projectIdNum.toString();
                 }
-                if (projectId !== undefined && projectName !== undefined) {
+                if (projectId !== undefined 
+                    && projectName !== undefined
+                    && projectPath !== undefined
+                ) {
                     projectInfoArray.push({
                         id: projectId,
                         name: projectName,
+                        path: projectPath,
                     });
                 }
             }
