@@ -92,7 +92,7 @@ async function executeCodeSonarSarifDownload(
     };
     const csConfigIO: csConfig.CSConfigIO = new csConfig.CSConfigIO();
     let projectConfig: csConfig.CSProjectConfig|undefined = await csConfigIO.readCSProjectConfig();
-    let projectName: string|undefined;
+    let projectPath: string|undefined;
     let projectId: CSProjectId|undefined;
     let baseAnalysisName: string|undefined;
     let baseAnalysisId: CSAnalysisId|undefined;
@@ -106,8 +106,8 @@ async function executeCodeSonarSarifDownload(
     let inputHubAddressString: string|undefined;
     let inputHubUserName: string|undefined;
     if (projectConfig) {
-        if (projectConfig.name && typeof projectConfig.name === "string") {
-            projectName = projectConfig.name;
+        if (projectConfig.path && typeof projectConfig.path === "string") {
+            projectPath = projectConfig.path;
         }
         if (projectConfig.id !== undefined)
         {
@@ -300,10 +300,10 @@ async function executeCodeSonarSarifDownload(
     //   and filling it with a placeholder until actual results are available.
     let projectInfoArray: CSProjectInfo[]|undefined;
     if (hubClient && !projectId) {
-        projectInfoArray = await fetchCSProjectRecords(hubClient, projectName);
+        projectInfoArray = await fetchCSProjectRecords(hubClient, projectPath);
     }
-    if (hubClient && projectInfoArray && projectInfoArray.length < 1 && projectName) {
-        // We tried to fetch the project by name, but it was not found.
+    if (hubClient && projectInfoArray && projectInfoArray.length < 1 && projectPath) {
+        // We tried to fetch the project by its path, but it was not found.
         //  Get the entire list of projects,
         //   we will need to ask the user to pick one:
         projectInfoArray = await fetchCSProjectRecords(hubClient);
@@ -317,7 +317,7 @@ async function executeCodeSonarSarifDownload(
     let projectInfo: CSProjectInfo|undefined;
     if (projectInfoArray && projectInfoArray.length === 1) {
         // TODO: what if the hub has exactly one project,
-        //  and the projectName does not match it?
+        //  and the projectPath does not match it?
         //  Should we show the picker with just one selectable item?
         projectInfo = projectInfoArray[0];
     }
@@ -403,7 +403,7 @@ async function executeCodeSonarSarifDownload(
             }
         }
         if (inputProjectInfo !== undefined) {
-            await csConfigIO.writeProjectName(inputProjectInfo.name);
+            await csConfigIO.writeProjectPath(inputProjectInfo.path);
             writeCount += 1;
         }
         if (writeCount > 0) {
@@ -426,7 +426,7 @@ async function executeCodeSonarSarifDownload(
     }
 }
 
-async function fetchCSProjectRecords(hubClient: CSHubClient, projectName?: string): Promise<CSProjectInfo[]> {
+async function fetchCSProjectRecords(hubClient: CSHubClient, projectPath?: string): Promise<CSProjectInfo[]> {
     return await window.withProgress<CSProjectInfo[]>({
             cancellable: false,
             location: ProgressLocation.Window,
@@ -437,13 +437,13 @@ async function fetchCSProjectRecords(hubClient: CSHubClient, projectName?: strin
             cancelToken: CancellationToken,
         ) => {
             // TODO this returns a promise, but could it also raise an error?  Yes!
-            return hubClient.fetchProjectInfo(projectName);
+            return hubClient.fetchProjectInfo(projectPath);
         });   
 }
 
 /** Request list of analyses from the hub. */
 async function fetchCSAnalysisRecords(hubClient: CSHubClient, projectId: CSProjectId): Promise<CSAnalysisInfo[]> {
-    return await window.withProgress<CSProjectInfo[]>({
+    return await window.withProgress<CSAnalysisInfo[]>({
             cancellable: false,
             location: ProgressLocation.Window,
             title: "fetching CodeSonar analyses",
@@ -465,7 +465,7 @@ async function showProjectQuickPick(projectInfoArray: CSProjectInfo[]): Promise<
     let sortedProjectInfoArray: CSProjectInfo[] = Array.from(projectInfoArray);
     sortedProjectInfoArray.sort(
         (p1: CSProjectInfo, p2: CSProjectInfo): number => {
-            const lc: number = collator.compare(p1.name, p2.name);
+            const lc: number = collator.compare(p1.path, p2.path);
             if (lc !== 0) {
                 return lc;
             }
@@ -480,7 +480,7 @@ async function showProjectQuickPick(projectInfoArray: CSProjectInfo[]): Promise<
     return showQuickPick(
             "Select a Project...",
             sortedProjectInfoArray,
-            ((p: CSProjectInfo): QuickPickItem => ({ label: p.name, description: `/project/${p.id}` }) ),
+            ((p: CSProjectInfo): QuickPickItem => ({ label: p.path, description: `/project/${p.id}` }) ),
             );
 
 }

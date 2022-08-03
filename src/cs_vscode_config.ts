@@ -17,7 +17,7 @@ const CONFIG_HUB_USER: string = "hubUser";
 const CONFIG_HUB_PWFILE: string = "hubPasswordFile";
 const CONFIG_HUB_CERT: string = "hubUserCertificate";
 const CONFIG_HUB_KEY: string = "hubUserCertificateKey";
-const CONFIG_ANALYSIS_PROJECT_NAME: string = "project";
+const CONFIG_ANALYSIS_PROJECT_PATH: string = "projectPath";
 const CONFIG_BASE_ANALYSIS_NAME: string = "baselineAnalysis";
 
 type CSHubAuthMode = "anonymous" | "password" | "certificate";
@@ -38,7 +38,7 @@ export interface CSAnalysisConfig {
 }
 
 export interface CSProjectConfig {
-    name?: string;
+    path?: string;
     id?: string|number;
     baselineAnalysis?: string|CSAnalysisConfig;
     hub?: CSHubConfig;
@@ -74,9 +74,9 @@ export class CSConfigIO {
         await this.wsConfig.update(CONFIG_HUB_USER, hubUserName);
     }
 
-    /** Save CodeSonar project name to config store. */
-    async writeProjectName(projectName: string): Promise<void> {
-        await this.wsConfig.update(CONFIG_ANALYSIS_PROJECT_NAME, projectName);
+    /** Save CodeSonar project path to config store. */
+    async writeProjectPath(projectPath: string): Promise<void> {
+        await this.wsConfig.update(CONFIG_ANALYSIS_PROJECT_PATH, projectPath);
     }
 
     /** Get configuration from the VSCode settings.json.
@@ -112,7 +112,7 @@ export class CSConfigIO {
             authMode = undefined;
         }
         return {
-            name: wsConfig.get<string>(CONFIG_ANALYSIS_PROJECT_NAME),
+            path: wsConfig.get<string>(CONFIG_ANALYSIS_PROJECT_PATH),
             baselineAnalysis: wsConfig.get<string>(CONFIG_BASE_ANALYSIS_NAME) || undefined,  // make empty string undefined
             hub: {
                 address: hubAddress,

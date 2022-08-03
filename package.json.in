@@ -105,9 +105,9 @@
                     "default": "",
                     "order": 17
                 },
-                "codesonar.project": {
+                "codesonar.projectPath": {
                     "type": "string",
-                    "description": "Name of analysis project on CodeSonar hub.",
+                    "description": "Project tree path of analysis project on CodeSonar hub.",
                     "default": "",
                     "order": 21
                 },
