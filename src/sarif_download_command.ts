@@ -33,6 +33,7 @@ import {
     CSAnalysisId,
     CSAnalysisInfo,
 } from './cs_hub_client';
+import * as sarifView from './sarif_viewer';
 
 
 const SARIF_EXT_NAME: string = 'sarif';
@@ -84,7 +85,8 @@ async function executeCodeSonarSarifDownload(
         outFilePath = path.normalize(outFilePath);
         return outFilePath;
     };
-    let projectConfig: csConfig.CSProjectConfig|undefined = await csConfigIO.readCSProjectConfig();
+    const projectConfig: csConfig.CSProjectConfig|undefined = await csConfigIO.readCSProjectConfig();
+    const extensionOptions: csConfig.CSExtensionOptions = await csConfigIO.readCSEXtensionOptions();
     let projectPath: string|undefined;
     let projectId: CSProjectId|undefined;
     let baseAnalysisName: string|undefined;
@@ -246,7 +248,9 @@ async function executeCodeSonarSarifDownload(
                     }).then(
                         (inputValue: string|undefined): void => {
                             if (inputValue === undefined) {
-                                reject(new Error("User cancelled password input."));
+                                // TODO this error will be caught when we catch signin errors.
+                                //  we should detect and ignore the error in that case.
+                                reject(new Error("User cancelled password input"));
                             }
                             else {
                                 secretStorage.store(passwordStorageKeyString, inputValue).then(
@@ -270,7 +274,7 @@ async function executeCodeSonarSarifDownload(
             // TODO: if sign-in failed, we'd like to know exactly why.  Need to get 403 response body.
             // signIn will return false if hub returns HTTP 403 Forbidden.
             //  signIn may throw an error if some other signIn problem occurs (e.g. cannot connect to server).
-            signInSucceeded = await hubClient.signIn();
+            signInSucceeded = await verifyHubCredentials(hubClient);
             if (!signInSucceeded) {
                 throw Error("Access forbidden");
             }
@@ -278,12 +282,10 @@ async function executeCodeSonarSarifDownload(
         catch (e: any) {
             const messageHeader: string = "CodeSonar hub sign-in";
             let errorMessage: string = errorToString(e);
-            if (errorMessage) {
-                errorMessage = messageHeader + ": " + errorMessage;
+            if (!errorMessage) {
+                errorMessage = "Internal error";
             }
-            else {
-                errorMessage = messageHeader;
-            }
+            errorMessage = messageHeader + ": " + errorMessage;
             throw new Error(errorMessage);
         }
         finally {
@@ -292,9 +294,6 @@ async function executeCodeSonarSarifDownload(
             }
         }
     }
-    // TODO: show progress/spinner when fetching project or analysis lists
-    //  Alternatively, consider opening quickpick immediately
-    //   and filling it with a placeholder until actual results are available.
     let projectInfoArray: CSProjectInfo[]|undefined;
     if (hubClient && !projectId) {
         projectInfoArray = await fetchCSProjectRecords(hubClient, projectPath);
@@ -419,8 +418,36 @@ async function executeCodeSonarSarifDownload(
         && analysisInfo !== undefined
         && destinationUri !== undefined
     ) {
-        await downloadSarifResults(hubClient, destinationUri.fsPath, analysisInfo, baseAnalysisInfo);
+        const destinationFilePath: string = destinationUri.fsPath;
+        const destinationFileName: string = path.basename(destinationFilePath);
+        await downloadSarifResults(hubClient, destinationFilePath, analysisInfo, baseAnalysisInfo);
+        if (extensionOptions.autoOpenSarifViewer) {
+            await sarifView.showSarifDocument(destinationUri);
+        }
+        else {
+            window.showInformationMessage(`Downloaded CodeSonar Analysis to '${destinationFileName}'`);
+        }
     }
+}
+
+/** Try to sign-in to hub.
+ * 
+ *  @return True if sign-in succeeded, False if sign-in was rejected.
+ *  @throws Error Sign-in process failed, perhaps due to network error.
+ */
+async function verifyHubCredentials(hubClient: CSHubClient): Promise<boolean> {
+    return await window.withProgress<boolean>({
+            cancellable: false,
+            location: ProgressLocation.Window,
+            title: "connecting to CodeSonar hub",
+        },
+        (
+            progress: IncrementalProgress,
+            cancelToken: CancellationToken,
+        ): Thenable<boolean> => {
+            let signInSucceeded: boolean = false;
+            return hubClient.signIn();
+        });
 }
 
 async function fetchCSProjectRecords(hubClient: CSHubClient, projectPath?: string): Promise<CSProjectInfo[]> {
@@ -432,7 +459,7 @@ async function fetchCSProjectRecords(hubClient: CSHubClient, projectPath?: strin
         (
             progress: IncrementalProgress,
             cancelToken: CancellationToken,
-        ) => {
+        ): Thenable<CSProjectInfo[]> => {
             // TODO this returns a promise, but could it also raise an error?  Yes!
             return hubClient.fetchProjectInfo(projectPath);
         });   
@@ -448,7 +475,7 @@ async function fetchCSAnalysisRecords(hubClient: CSHubClient, projectId: CSProje
         (
             progress: IncrementalProgress,
             cancelToken: CancellationToken,
-        ) => {
+        ): Thenable<CSAnalysisInfo[]> => {
             // TODO this returns a promise, but could it also raise an error?
             return hubClient.fetchAnalysisInfo(projectId);
         });
@@ -563,7 +590,6 @@ async function downloadSarifResults(
         ): Promise<void> {
     const analysisId: CSAnalysisId = analysisInfo.id;
     const baseAnalysisId: CSAnalysisId|undefined = baseAnalysisInfo?.id;
-    const destinationFileName: string = path.basename(destinationFilePath);
     await window.withProgress({
         location: ProgressLocation.Notification,
         title: "Downloading CodeSonar analysis...",
@@ -611,7 +637,6 @@ async function downloadSarifResults(
                 sarifStream.pipe(destinationStream
                     ).on('error', reject
                     ).on('finish', (): void => {
-                        window.showInformationMessage(`Downloaded CodeSonar Analysis to '${destinationFileName}'`);
                         resolve();
                     });
             }).catch(reject);

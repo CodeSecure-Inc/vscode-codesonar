@@ -47,9 +47,10 @@ export interface CSProjectConfig {
     hub?: CSHubConfig;
 }
 
-export interface CSConfig {
-    projects?: CSProjectConfig[];
+export interface CSExtensionOptions {
+    autoOpenSarifViewer: boolean;
 }
+
 
 /** Formats a string that encodes both the hub address and user name. */
 function formatUserHubAddress(hubAddress: CSHubAddress, hubUserName: string): string {
@@ -97,6 +98,19 @@ export class CSConfigIO {
     /** Save CodeSonar project path to config store. */
     async writeProjectPath(projectPath: string): Promise<void> {
         await this.wsConfig.update(CONFIG_ANALYSIS_PROJECT_PATH, projectPath);
+    }
+
+    /** Get extension behavior options. */
+    public async readCSEXtensionOptions(): Promise<CSExtensionOptions> {
+        return Promise.resolve(this.readCSExtensionOptionsSync());
+    }
+
+    private readCSExtensionOptionsSync(): CSExtensionOptions {
+        const wsConfig: WorkspaceConfiguration = this.wsConfig;
+        const options: CSExtensionOptions = {
+            autoOpenSarifViewer: (wsConfig.get<boolean>("autoOpenSarifViewer") || false),
+        };
+        return options;
     }
 
     /** Get configuration from the VSCode settings.json.
