@@ -20,6 +20,6 @@ Pre-release version.
 
 ## Release Notes
 
-### 0.0.3
+### 0.9.0
 
-Prototype/pre-release.  For demonstration and evaluation only.
+Beta/pre-release.  For demonstration and evaluation only.
