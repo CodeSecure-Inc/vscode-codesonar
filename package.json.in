@@ -127,6 +127,12 @@
                     "description": "Name of CodeSonar analysis to use as a baseline when fetching new analysis results.",
                     "default": "",
                     "order": 23
+                },
+                "codesonar.autoOpenSarifViewer": {
+                    "type": "boolean",
+                    "description": "Automatically open the Microsoft Sarif Viewer after downloading a SARIF log file.",
+                    "default": true,
+                    "order": 30
                 }
             }
         }
