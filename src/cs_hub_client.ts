@@ -55,9 +55,11 @@ export interface CSHubAuthenticationOptions {
 /** Options for creating a connection to a CodeSonar hub.
  *
  *  @property {string} cafile  path to a Certificate Authority certificate file in PEM format to use for verifying the hub server.
+ *  @property {number} timeout  socket timeout in milliseconds.
  */
 export interface CSHubClientConnectionOptions extends CSHubAuthenticationOptions {
     cafile?: string;
+    timeout?: number;
 }
 
 type CSHubSignInFormBoolean = "no" | "yes";
@@ -239,6 +241,9 @@ export class CSHubClient {
                 hostname: this.hubAddress.hostname,
                 port: this.hubAddress.port,
             };
+            if (hubOptions.timeout !== undefined) {
+                httpOptions.timeout = hubOptions.timeout;
+            }
             if (hubOptions.cafile) {
                 httpOptions.ca = await readFile(hubOptions.cafile);
             }
@@ -398,7 +403,6 @@ export class CSHubClient {
                     };
                     const sifData: string = encodeURIQuery(sif);
                     this.log("Posting signin data...");
-                    // TODO include hubcert and hubkey with POST
                     this.post(signInUrlPath, sifData).then((respBody: NodeJS.ReadableStream): void => {
                         // Ignore response body:
                         respBody.resume();
