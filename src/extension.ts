@@ -12,6 +12,7 @@ import {
 
 export function activate(context: ExtensionContext) {
     const disposables: Disposable[] = [];
+    const verboseErrors: boolean = false;
     // TODO consider using VS Code Output channel instead of the global console:
     const logger: Logger = console;
 
@@ -22,11 +23,11 @@ export function activate(context: ExtensionContext) {
                 logger,
                 new CSConfigIO(),
                 context.secrets,
-            ).catch((e: any): void => {
-                let errorMessage = errorToString(e);
-                if (!errorMessage) {
-                    errorMessage = 'CodeSonar SARIF download failed.';
-                }
+            ).catch((e: unknown): void => {
+                const errorMessage = errorToString(e, {
+                        verbose: verboseErrors,
+                        message: 'CodeSonar SARIF download failed.', 
+                    });
                 window.showErrorMessage(errorMessage);
             });
         }));
@@ -37,11 +38,11 @@ export function activate(context: ExtensionContext) {
                 logger,
                 new CSConfigIO(),
                 context.secrets,
-            ).catch((e: any): void => {
-                let errorMessage = errorToString(e);
-                if (!errorMessage) {
-                    errorMessage = 'CodeSonar SARIF download failed.';
-                }
+            ).catch((e: unknown): void => {
+                const errorMessage = errorToString(e, {
+                        verbose: verboseErrors,
+                        message: 'CodeSonar SARIF download failed.', 
+                    });
                 window.showErrorMessage(errorMessage);
             });
         }));
@@ -53,10 +54,10 @@ export function activate(context: ExtensionContext) {
                     new CSConfigIO(),
                     context.secrets,
                 ).catch((e: any): void => {
-                    let errorMessage = errorToString(e);
-                    if (!errorMessage) {
-                        errorMessage = 'Failed to remove password.';
-                    }
+                    const errorMessage = errorToString(e, {
+                        verbose: verboseErrors,
+                        message: 'Failed to remove password.', 
+                    });
                     window.showErrorMessage(errorMessage);
                 });
             }));

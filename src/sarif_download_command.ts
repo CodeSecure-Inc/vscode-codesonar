@@ -14,6 +14,7 @@ import {
 } from 'vscode';
 
 import { 
+    asErrnoException,
     errorToString,
     replaceInvalidFileNameChars,
 } from './common_utils';
@@ -266,6 +267,7 @@ async function executeCodeSonarSarifDownload(
             });
         }); 
     }
+    let certificateNotTrustedError: Error|undefined;
     if (hubAddressObject !== undefined) {
         hubClient = new CSHubClient(hubAddressObject, hubClientOptions);
         hubClient.logger = logger;
@@ -280,18 +282,30 @@ async function executeCodeSonarSarifDownload(
             }
         }
         catch (e: any) {
-            const messageHeader: string = "CodeSonar hub sign-in";
-            let errorMessage: string = errorToString(e);
-            if (!errorMessage) {
-                errorMessage = "Internal error";
+            const messageHeader: string = "CodeSonar hub sign-in failure";
+            const messageBody: string = errorToString(e, { message: "Internal Error"});
+            const errorMessage = `${messageHeader}: ${messageBody}`;
+            const e2: NodeJS.ErrnoException = new Error(errorMessage);
+            const ex: NodeJS.ErrnoException|undefined = asErrnoException(e);
+            const errorName: string|undefined = ex?.code;
+            e2.code = errorName;
+            if (errorName === 'DEPTH_ZERO_SELF_SIGNED_CERT'
+                    || errorName === 'SELF_SIGNED_CERT_IN_CHAIN'
+            ) {
+                certificateNotTrustedError = e2;
+            } else {
+                throw e2;
             }
-            errorMessage = messageHeader + ": " + errorMessage;
-            throw new Error(errorMessage);
         }
         finally {
             if (!signInSucceeded && passwordStorageKey) {
                 secretStorage.delete(passwordStorageKey);
             }
+        }
+        if (certificateNotTrustedError) {
+            // We will inform the user about the certificate problem later.
+            // Don't try to make any more connections:
+            hubClient = undefined;
         }
     }
     let projectInfoArray: CSProjectInfo[]|undefined;
@@ -382,9 +396,13 @@ async function executeCodeSonarSarifDownload(
         }
     }
     let destinationUri: Uri|undefined;
-    if (analysisInfo !== undefined) {
+    if (analysisInfo !== undefined
+        || certificateNotTrustedError
+        ) {
         // If the user gets this far, and if we prompted them to choose some settings,
         //   then save their settings:
+        //  In the case of a certificate error, we save the settings anyway
+        //    since the user may be able to tweak the settings to make the connection work.
         //  We could save these settings at other stages of the prompt sequence.
         //   Saving settings at this stage attempts to strike a balance 
         //   between saving settings that are known to work
@@ -405,7 +423,14 @@ async function executeCodeSonarSarifDownload(
         if (writeCount > 0) {
             window.showInformationMessage("CodeSonar settings have been saved.");
         }
-
+    }
+    if (certificateNotTrustedError) {
+        window.showInformationMessage(
+            "Hub HTTPS certificate is not trusted, "
+            + "try updating the CodeSonar Extension's 'Hub Authority Certificate' setting.");        
+        throw certificateNotTrustedError;
+    }
+    if (analysisInfo !== undefined) {
         const defaultFileName: string = replaceInvalidFileNameChars(analysisInfo.name);
         let defaultDestinationPath: string = defaultFileName + SARIF_EXT;
         if (workspaceFolderPath !== undefined) {
@@ -460,7 +485,6 @@ async function fetchCSProjectRecords(hubClient: CSHubClient, projectPath?: strin
             progress: IncrementalProgress,
             cancelToken: CancellationToken,
         ): Thenable<CSProjectInfo[]> => {
-            // TODO this returns a promise, but could it also raise an error?  Yes!
             return hubClient.fetchProjectInfo(projectPath);
         });   
 }
@@ -476,7 +500,6 @@ async function fetchCSAnalysisRecords(hubClient: CSHubClient, projectId: CSProje
             progress: IncrementalProgress,
             cancelToken: CancellationToken,
         ): Thenable<CSAnalysisInfo[]> => {
-            // TODO this returns a promise, but could it also raise an error?
             return hubClient.fetchAnalysisInfo(projectId);
         });
 }
