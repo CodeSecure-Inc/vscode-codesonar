@@ -1,7 +1,10 @@
 /** An object that facilitates access to a CodeSonar hub. */
 import { readFile } from 'fs/promises';
 
-import { errorToString } from './common_utils';
+import { 
+    asErrnoException,
+    errorToString,
+} from './common_utils';
 import { Logger } from './logger';
 
 import { 
@@ -273,9 +276,15 @@ export class CSHubClient {
                 }
                 catch (e: unknown) {
                     this.log(e);
-                    // HTTPS did not work.
-                    //  This could happen if the HTTPS certificate is not trusted.
-                    //  Assume HTTP:
+                    const ex: NodeJS.ErrnoException|undefined = asErrnoException(e);
+                    const code: string = ex?.code ?? '';
+                    // EPROTO error occurs if we try to speak in HTTPS to an HTTP hub:
+                    if (code !== 'EPROTO') {
+                        // Many other legitimate connection errors could occur,
+                        //  such as 'DEPTH_ZERO_SELF_SIGNED_CERT',
+                        //  and we want those errors to be seen by the caller.
+                        throw e;
+                    }
                     protocol = "http";
                 }
             }
@@ -287,7 +296,7 @@ export class CSHubClient {
     }
 
     /** Read a JSON stream into a data structure. */
-    private async parseResponseJson(resIO: NodeJS.ReadableStream): Promise<unknown> {
+    private parseResponseJson(resIO: NodeJS.ReadableStream): Promise<unknown> {
         return new Promise<unknown>((
             resolve: (jsonObject: unknown) => void,
             reject: ((e: any) => void),
@@ -325,45 +334,35 @@ export class CSHubClient {
 
     /** Post raw data to the hub. */
     private async post(
-            resource: string,
-            data: string,
-            options?: HTTPClientRequestOptions,
-            contentType: string = "application/x-www-form-urlencoded",
-        ): Promise<NodeJS.ReadableStream> {
-        return new Promise<NodeJS.ReadableStream>((
-            resolve: (respIO: NodeJS.ReadableStream) => void,
-            reject: (e: any) => void,
-        ) => {
-            this.getHttpClientConnection().then(
-                (httpConn: HTTPClientConnection): Promise<HTTPReceivedResponse> => {
-                const httpOptions: HTTPClientRequestOptions = { 
-                    method: "POST",
-                    headers: {
-                        /* eslint-disable @typescript-eslint/naming-convention */
-                        "content-type": contentType,
-                        /* eslint-enable @typescript-eslint/naming-convention */
-                    },
-                };
-                this.log(`Posting resource to ${resource}`);
-                // The hub will return HTTP 501 if Transfer-Encoding header is set.
-                // To avoid this, we must ensure Content-Length header is set.
-                // We assume that the httpConn.request() method will do this for us:
-                return httpConn.request(resource, httpOptions, data);
-            }).then((resp: HTTPReceivedResponse): void => {
-                if (resp.status.code === 200) {
-                    this.log("Received OK response");
-                    resolve(resp.body);
-                }
-                else {
-                    this.log(`HTTP Status: ${resp.status}`);
-                    // TODO: sometimes, we will want the response body as a string
-                    // Ignore the rest of the response stream:
-                    resp.body.resume();
-                    reject(resp.status);
-                }
+        resource: string,
+        data: string,
+        options?: HTTPClientRequestOptions,
+        contentType: string = "application/x-www-form-urlencoded",
+    ): Promise<NodeJS.ReadableStream> {
+        const httpConn: HTTPClientConnection = await this.getHttpClientConnection()
+        const httpOptions: HTTPClientRequestOptions = { 
+            method: "POST",
+            headers: {
+                /* eslint-disable @typescript-eslint/naming-convention */
+                "content-type": contentType,
+                /* eslint-enable @typescript-eslint/naming-convention */
             },
-            reject);
-        });
+        };
+        this.log(`Posting resource to ${resource}`);
+        // The hub will return HTTP 501 if Transfer-Encoding header is set.
+        // To avoid this, we must ensure Content-Length header is set.
+        // We assume that the httpConn.request() method will do this for us:
+        const resp: HTTPReceivedResponse = await httpConn.request(resource, httpOptions, data);
+        if (resp.status.code !== 200) {
+            this.log(`HTTP Status: ${resp.status}`);
+            // TODO: sometimes, we will want the response body as a string
+            // Ignore the rest of the response stream:
+            resp.body.resume();
+            throw resp.status;
+        }
+
+        this.log("Received OK response");
+        return resp.body;
     }
 
     private clearSignInCookies(httpConn: HTTPClientConnection): void {
@@ -376,7 +375,7 @@ export class CSHubClient {
      *
      * @returns {Promise<boolean>}  Promise resolving to `true` if sign-in succeeded; `false` if credentials were rejected.
      */
-    public async signIn(): Promise<boolean> {
+    public signIn(): Promise<boolean> {
         // Send sign-in POST request to a page that produces a short response:
         const signInUrlPath: string = "/";
         const options: CSHubClientConnectionOptions = this.options;
@@ -434,7 +433,7 @@ export class CSHubClient {
                 if (passwordPromise === undefined) {
                     reject(new Error("Hub user password was not provided."));
                 } else {
-                    passwordPromise.then((password: string): void => {
+                    passwordPromise.then((password: string): Promise<NodeJS.ReadableStream> => {
                         const sif: CSHubSignInForm = {
                             /* eslint-disable @typescript-eslint/naming-convention */
                             sif_sign_in: "yes",
@@ -447,21 +446,21 @@ export class CSHubClient {
                         };
                         const sifData: string = encodeURIQuery(sif);
                         this.log("Posting signin data...");
-                        this.post(signInUrlPath, sifData).then(
-                            (respBody: NodeJS.ReadableStream): void => {
-                                // Ignore response body:
-                                respBody.resume();
-                                resolve(true);
-                        }).catch((e: any): void => {
-                            if ((e instanceof HTTPStatusError)
-                                    && e.code !== undefined
-                                    && e.code === 403) {
-                                resolve(false);
-                            } else {
-                                reject(e);
-                            }
-                        });
-                    }).catch(reject);
+                        return this.post(signInUrlPath, sifData);
+                    }).then(
+                        (respBody: NodeJS.ReadableStream): void => {
+                            // Ignore response body:
+                            respBody.resume();
+                            resolve(true);
+                    }).catch((e: any): void => {
+                        if ((e instanceof HTTPStatusError)
+                                && e.code !== undefined
+                                && e.code === 403) {
+                            resolve(false);
+                        } else {
+                            reject(e);
+                        }
+                    });
                 }
             }
             else if (options.auth === undefined || options.auth === "anonymous") {
@@ -470,7 +469,7 @@ export class CSHubClient {
                     (httpConn: HTTPClientConnection): void => {
                         this.clearSignInCookies(httpConn);
                         resolve(true);
-                });
+                }).catch(reject);
             }
             else {
                 reject(new Error("Could not determine hub authentication method."));
@@ -479,7 +478,7 @@ export class CSHubClient {
     }
 
     /** Fetch a raw resource from the hub. */
-    public async fetch(resource: string): Promise<NodeJS.ReadableStream> {
+    public fetch(resource: string): Promise<NodeJS.ReadableStream> {
         return new Promise<NodeJS.ReadableStream>((
                 resolve: (resIO: NodeJS.ReadableStream) => void,
                 reject: (e: any) => void,
@@ -488,7 +487,7 @@ export class CSHubClient {
                     (httpConn: HTTPClientConnection): Promise<HTTPReceivedResponse> => {
                         this.log(`Fetching resource ${resource}`);
                             return httpConn.request(resource);
-                }).then(resp => {
+                }).then((resp: HTTPReceivedResponse): void => {
                     if (resp.status.code === 200) {
                         this.log("Received OK response");
                         resolve(resp.body);
@@ -498,14 +497,14 @@ export class CSHubClient {
                         // TODO: read response body to get error details
                         reject(resp.status);
                     }
-                });
+                }).catch(reject);
             });
     }
 
     /** Fetch an untyped JSON object from the hub. */
     private async fetchJson(resource: string): Promise<unknown> {
-        return this.fetch(resource).then(
-            (resIO: NodeJS.ReadableStream): unknown => this.parseResponseJson(resIO));
+        const resIO = await this.fetch(resource);
+        return this.parseResponseJson(resIO);
     }
 
     public async fetchProjectInfo(searchProjectPath?: string): Promise<CSProjectInfo[]> {
