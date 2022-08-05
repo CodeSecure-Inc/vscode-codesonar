@@ -95,6 +95,7 @@ async function executeCodeSonarSarifDownload(
     let hubConfig: csConfig.CSHubConfig|undefined;
     let hubAddressString: string|undefined;
     let hubCAFilePath: string|undefined;
+    let hubSocketTimeout: number|undefined;
     let hubUserName: string|undefined;
     let hubUserPasswordFilePath: string|undefined;
     let hubUserCertFilePath: string|undefined;
@@ -132,6 +133,7 @@ async function executeCodeSonarSarifDownload(
     }
     if (hubConfig) {
         hubAddressString = hubConfig.address;
+        hubSocketTimeout = hubConfig.timeout;
         hubCAFilePath = hubConfig.cacert;
         hubUserName = hubConfig.hubuser;
         hubUserPasswordFilePath = hubConfig.hubpwfile;
@@ -184,6 +186,9 @@ async function executeCodeSonarSarifDownload(
     if (hubCAFilePath) {
         hubCAFilePath = resolveFilePath(hubCAFilePath);
         hubClientOptions.cafile = hubCAFilePath;
+    }
+    if (hubSocketTimeout !== undefined) {
+        hubClientOptions.timeout = hubSocketTimeout;
     }
     if (hubUserName) {
         hubClientOptions.hubuser = hubUserName;

@@ -15,6 +15,7 @@ import { CSHubAddress } from './cs_hub_client';
 const CONFIG_SECTION: string = "codesonar";
 const CONFIG_HUB_ADDR: string = "hubAddress";
 const CONFIG_HUB_CACERT: string = "hubAuthorityCertificate";
+const CONFIG_HUB_TIMEOUT: string = "hubSocketTimeoutSeconds";
 const CONFIG_HUB_AUTH: string = "authenticationMode";
 const CONFIG_HUB_USER: string = "hubUser";
 const CONFIG_HUB_PWFILE: string = "hubPasswordFile";
@@ -28,6 +29,7 @@ type CSHubAuthMode = "anonymous" | "password" | "certificate";
 export interface CSHubConfig {
     address?: string;
     cacert?: string;
+    timeout?: number;
     auth?: CSHubAuthMode;
     hubuser?: string;
     hubpwfile?: string;
@@ -145,12 +147,18 @@ export class CSConfigIO {
         {
             authMode = undefined;
         }
+        let timeoutSeconds: number|undefined = wsConfig.get<number|null>(CONFIG_HUB_TIMEOUT) ?? undefined;
+        let timeoutMilliseconds: number|undefined;
+        if (typeof timeoutSeconds === "number" && timeoutSeconds > 0) {
+            timeoutMilliseconds = timeoutSeconds * 1000;
+        }
         return {
             path: wsConfig.get<string>(CONFIG_ANALYSIS_PROJECT_PATH),
             baselineAnalysis: wsConfig.get<string>(CONFIG_BASE_ANALYSIS_NAME) || undefined,  // make empty string undefined
             hub: {
                 address: hubAddress,
                 cacert: wsConfig.get<string>(CONFIG_HUB_CACERT) || undefined,
+                timeout: timeoutMilliseconds,
                 auth: authMode,
                 hubuser: wsConfig.get<string>(CONFIG_HUB_USER) || undefined,
                 hubpwfile: wsConfig.get<string>(CONFIG_HUB_PWFILE) || undefined,

@@ -68,11 +68,17 @@
                     "default": "",
                     "order": 12
                 },
+                "codesonar.hubSocketTimeoutSeconds": {
+                    "type": ["null", "integer"],
+                    "description": "Socket timeout in seconds for hub connections.",
+                    "default": null,
+                    "order": 13
+                },
                 "codesonar.authenticationMode": {
                     "type": "string",
                     "description": "Authentication mode.",
                     "default": "",
-                    "order": 13,
+                    "order": 21,
                     "enum": [
                         "",
                         "anonymous",
@@ -90,49 +96,49 @@
                     "type": "string",
                     "description": "Hub user account name.",
                     "default": "",
-                    "order": 14
+                    "order": 22
                 },
                 "codesonar.hubPasswordFile": {
                     "type": "string",
                     "description": "Optional.  Path to a file containing hub user password.",
                     "default": "",
-                    "order": 15
+                    "order": 23
                 },
                 "codesonar.hubUserCertificate": {
                     "type": "string",
                     "description": "Path to hub user account client certificate ASCII-encoded (PEM) file.",
                     "default": "",
-                    "order": 16
+                    "order": 24
                 },
                 "codesonar.hubUserCertificateKey": {
                     "type": "string",
                     "description": "Path to hub user account client certificate private key ASCII-encoded (PEM) file.",
                     "default": "",
-                    "order": 17
+                    "order": 25
                 },
                 "codesonar.projectPath": {
                     "type": "string",
                     "description": "Project tree path of analysis project on CodeSonar hub.",
                     "default": "",
-                    "order": 21
+                    "order": 31
                 },
                 "codesonar.projectFile": {
                     "type": "string",
                     "description": "Path to CodeSonar analysis project (.prj) file.",
                     "default": "",
-                    "order": 22
+                    "order": 32
                 },
                 "codesonar.baselineAnalysis": {
                     "type": "string",
                     "description": "Name of CodeSonar analysis to use as a baseline when fetching new analysis results.",
                     "default": "",
-                    "order": 23
+                    "order": 33
                 },
                 "codesonar.autoOpenSarifViewer": {
                     "type": "boolean",
                     "description": "Automatically open the Microsoft Sarif Viewer after downloading a SARIF log file.",
                     "default": true,
-                    "order": 30
+                    "order": 50
                 }
             }
         }
