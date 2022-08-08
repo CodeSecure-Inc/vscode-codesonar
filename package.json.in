@@ -69,7 +69,10 @@
                     "order": 12
                 },
                 "codesonar.hubSocketTimeoutSeconds": {
-                    "type": ["null", "integer"],
+                    "type": [
+                        "null",
+                        "integer"
+                    ],
                     "description": "Socket timeout in seconds for hub connections.",
                     "default": null,
                     "order": 13

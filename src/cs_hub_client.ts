@@ -344,7 +344,7 @@ export class CSHubClient {
         options?: HTTPClientRequestOptions,
         contentType: string = "application/x-www-form-urlencoded",
     ): Promise<NodeJS.ReadableStream> {
-        const httpConn: HTTPClientConnection = await this.getHttpClientConnection()
+        const httpConn: HTTPClientConnection = await this.getHttpClientConnection();
         const httpOptions: HTTPClientRequestOptions = { 
             method: "POST",
             headers: {
