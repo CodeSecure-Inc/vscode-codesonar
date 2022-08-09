@@ -5,7 +5,7 @@ import * as os from 'os';
 import { SecretStorage, window } from 'vscode';
 
 import { Logger } from './logger';
-import { CSHubAddress } from './cs_hub_client';
+import { CSHubAddress } from './csonar_ex';
 import { 
     formatHubUserPasswordStorageKey,
     CSConfigIO,

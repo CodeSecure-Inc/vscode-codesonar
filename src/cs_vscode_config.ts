@@ -9,7 +9,7 @@ import { errorToString } from './common_utils';
 import { Logger } from './logger';
 import { findVSConfigFilePath, findVSConfigFolderPath } from './vscode_ex';
 
-import { CSHubAddress } from './cs_hub_client';
+import { CSHubAddress } from './csonar_ex';
 
 
 const CONFIG_SECTION: string = "codesonar";
@@ -22,7 +22,15 @@ const CONFIG_HUB_PWFILE: string = "hubPasswordFile";
 const CONFIG_HUB_CERT: string = "hubUserCertificate";
 const CONFIG_HUB_KEY: string = "hubUserCertificateKey";
 const CONFIG_ANALYSIS_PROJECT_PATH: string = "projectPath";
+const CONFIG_ANALYSIS_PROJECT_FILE: string = "projectFile";
 const CONFIG_BASE_ANALYSIS_NAME: string = "baselineAnalysis";
+const CONFIG_WARNING_FILTER: string = "warningFilter";
+
+const SARIF_WHITESPACE_FORMAT_INDENTED: string = "indented";
+const SARIF_WHITESPACE_FORMAT_COMPACT: string = "compact";
+
+const SARIF_INDENT_LENGTH: number = 2;
+const SARIF_NO_INDENT_LENGTH: number = -1;
 
 type CSHubAuthMode = "anonymous" | "password" | "certificate";
 
@@ -44,13 +52,15 @@ export interface CSAnalysisConfig {
 
 export interface CSProjectConfig {
     path?: string;
-    id?: string|number;
+    projectFilePath?: string;
+    warningFilter?: string;
     baselineAnalysis?: string|CSAnalysisConfig;
     hub?: CSHubConfig;
 }
 
 export interface CSExtensionOptions {
     autoOpenSarifViewer: boolean;
+    sarifIndentLength?: number;
 }
 
 
@@ -109,9 +119,21 @@ export class CSConfigIO {
 
     private readCSExtensionOptionsSync(): CSExtensionOptions {
         const wsConfig: WorkspaceConfiguration = this.wsConfig;
-        const options: CSExtensionOptions = {
+        let options: CSExtensionOptions = {
             autoOpenSarifViewer: (wsConfig.get<boolean>("autoOpenSarifViewer") || false),
         };
+        const sarifWhitespaceFormat: string|undefined = wsConfig.get<string>("sarifWhitespaceFormat");
+        if (sarifWhitespaceFormat !== undefined) {
+            if (sarifWhitespaceFormat === SARIF_WHITESPACE_FORMAT_INDENTED) {
+                options.sarifIndentLength = SARIF_INDENT_LENGTH;
+            }
+            else if (sarifWhitespaceFormat === SARIF_WHITESPACE_FORMAT_COMPACT) {
+                options.sarifIndentLength = SARIF_NO_INDENT_LENGTH;
+            }
+            else {
+                throw Error(`Unrecognized sarifWhitespaceFormat setting: '${sarifWhitespaceFormat}'`);
+            }
+        }
         return options;
     }
 
@@ -154,6 +176,8 @@ export class CSConfigIO {
         }
         return {
             path: wsConfig.get<string>(CONFIG_ANALYSIS_PROJECT_PATH),
+            projectFilePath: wsConfig.get<string>(CONFIG_ANALYSIS_PROJECT_FILE),
+            warningFilter: wsConfig.get<string>(CONFIG_WARNING_FILTER),
             baselineAnalysis: wsConfig.get<string>(CONFIG_BASE_ANALYSIS_NAME) || undefined,  // make empty string undefined
             hub: {
                 address: hubAddress,

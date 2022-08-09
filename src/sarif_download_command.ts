@@ -23,17 +23,20 @@ import { Logger } from './logger';
 import { 
     findActiveVSWorkspaceFolderPath,
 } from './vscode_ex';
+import {
+    CSHubAddress,
+    CSProjectFile,
+} from './csonar_ex';
 import * as csConfig from './cs_vscode_config';
 import { 
-    parseCSProjectId,
     parseCSAnalysisId,
-    CSHubAddress,
     CSHubClient,
     CSHubClientConnectionOptions,
     CSProjectId,
     CSProjectInfo,
     CSAnalysisId,
     CSAnalysisInfo,
+    CSHubSarifSearchOptions,
 } from './cs_hub_client';
 import * as sarifView from './sarif_viewer';
 
@@ -103,13 +106,11 @@ async function executeCodeSonarSarifDownload(
     let hubUserCertKeyFilePath: string|undefined;
     let inputHubAddressString: string|undefined;
     let inputHubUserName: string|undefined;
+    let warningFilter: string|undefined;
+    let projectFile: CSProjectFile|undefined;
     if (projectConfig) {
         if (projectConfig.path && typeof projectConfig.path === "string") {
             projectPath = projectConfig.path;
-        }
-        if (projectConfig.id !== undefined)
-        {
-            projectId = parseCSProjectId(projectConfig.id);
         }
         if (projectConfig.hub) {
             if (typeof projectConfig.hub === "string") {
@@ -130,6 +131,16 @@ async function executeCodeSonarSarifDownload(
         }
         else if (projectConfig.baselineAnalysis.name !== undefined) {
             baseAnalysisName = projectConfig.baselineAnalysis.name;
+        }
+        warningFilter = projectConfig.warningFilter;
+        if (projectConfig.projectFilePath) {
+            let projectFilePath: string = projectConfig.projectFilePath;
+            if (workspaceFolderPath !== undefined
+                && !path.isAbsolute(projectFilePath)
+            ) {
+                projectFilePath = path.join(workspaceFolderPath, projectFilePath);
+            }
+            projectFile = new CSProjectFile(projectFilePath);
         }
     }
     if (hubConfig) {
@@ -351,6 +362,8 @@ async function executeCodeSonarSarifDownload(
     let analysisInfo: CSAnalysisInfo|undefined;
     let baseAnalysisInfo: CSAnalysisInfo|undefined;
     if (analysisInfoArray && analysisInfoArray.length) {
+        // TODO: remember the analysis ID for the baseline analysis,
+        //  so that we don't need to look it up in future invocations of the download command.
         if (!withAnalysisBaseline) {
             // We won't need to find a baseline analysis.
             // pass;
@@ -398,7 +411,12 @@ async function executeCodeSonarSarifDownload(
             assert.fail("Analyses were expected, but none were found");
         }
         else if (!withAnalysisBaseline || baseAnalysisInfo !== undefined) {
-            analysisInfo = await showAnalysisQuickPick(targetAnalysisInfoArray, "Select an Analysis...");
+            if (projectFile !== undefined) {
+                analysisInfo = await getAnalysisFromProjectFile(projectFile);
+            }
+            if (analysisInfo === undefined) {
+                analysisInfo = await showAnalysisQuickPick(targetAnalysisInfoArray, "Select an Analysis...");
+            }
         }
     }
     let destinationUri: Uri|undefined;
@@ -451,7 +469,14 @@ async function executeCodeSonarSarifDownload(
     ) {
         const destinationFilePath: string = destinationUri.fsPath;
         const destinationFileName: string = path.basename(destinationFilePath);
-        await downloadSarifResults(hubClient, destinationFilePath, analysisInfo, baseAnalysisInfo);
+        let sarifSearchOptions: CSHubSarifSearchOptions = {};
+        if (extensionOptions.sarifIndentLength !== undefined) {
+            sarifSearchOptions.indentLength = extensionOptions.sarifIndentLength;
+        }
+        if (warningFilter !== undefined) {
+            sarifSearchOptions.warningFilter = warningFilter;
+        }
+        await downloadSarifResults(hubClient, destinationFilePath, analysisInfo, baseAnalysisInfo, sarifSearchOptions);
         if (extensionOptions.autoOpenSarifViewer) {
             await sarifView.showSarifDocument(destinationUri);
         }
@@ -595,6 +620,15 @@ async function showQuickPick<T>(
     });
 }
 
+/** Try to get the analysis ID from the .prj_files dir. */
+async function getAnalysisFromProjectFile(projectFile: CSProjectFile): Promise<CSAnalysisInfo> {
+    const analysisIdString: string = await projectFile.readAnalysisIdString();
+    return {
+        id: analysisIdString,
+        name: projectFile.baseName,
+    };
+}
+
 
 /** Show SaveAs dialog for SARIF download. */
 async function showSarifSaveDialog(defaultFilePath: string): Promise<Uri|undefined> {
@@ -615,7 +649,8 @@ async function downloadSarifResults(
         hubClient: CSHubClient,
         destinationFilePath: string,
         analysisInfo: CSAnalysisInfo,
-        baseAnalysisInfo?: CSAnalysisInfo,
+        baseAnalysisInfo: CSAnalysisInfo|undefined,
+        sarifSearchOptions: CSHubSarifSearchOptions|undefined,
         ): Promise<string> {
     const analysisId: CSAnalysisId = analysisInfo.id;
     const baseAnalysisId: CSAnalysisId|undefined = baseAnalysisInfo?.id;
@@ -673,10 +708,10 @@ async function downloadSarifResults(
             intervalMS);
         let sarifPromise: Promise<Readable>;
         if (baseAnalysisId !== undefined) {
-            sarifPromise = hubClient.fetchSarifAnalysisDifferenceStream(analysisId, baseAnalysisId);
+            sarifPromise = hubClient.fetchSarifAnalysisDifferenceStream(analysisId, baseAnalysisId, sarifSearchOptions);
         }
         else {
-            sarifPromise = hubClient.fetchSarifAnalysisStream(analysisId);
+            sarifPromise = hubClient.fetchSarifAnalysisStream(analysisId, sarifSearchOptions);
         }
         return new Promise<string>((
             resolve: (savedFilePath: string) => void,

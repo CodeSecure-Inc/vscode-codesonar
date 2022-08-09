@@ -16,6 +16,7 @@ import {
     HTTPReceivedResponse,
     HTTPStatusError,
 } from './http_client';
+import { CSHubAddress } from './csonar_ex';
 
 
 type CSHubRecordId = string;
@@ -61,6 +62,13 @@ export interface CSHubAuthenticationOptions {
 export interface CSHubClientConnectionOptions extends CSHubAuthenticationOptions {
     cafile?: string;
     timeout?: number;
+}
+
+/** Options for warning search in SARIF format. */
+export interface CSHubSarifSearchOptions {
+    warningFilter?: string;
+    indentLength?: number;
+    artifactListing?: boolean;
 }
 
 type CSHubSignInFormBoolean = "no" | "yes";
@@ -145,51 +153,6 @@ export function parseCSAnalysisId(analysisId: string|number): CSAnalysisId {
     return parseCSHubRecordId(analysisId);
 }
 
-/** A parsed CodeSonar hub address.
- *  
- *  Like a simplified URL, but the protocol is optional.
- */
-export class CSHubAddress {
-    private readonly hubAddressString: string;
-    public readonly protocol: string|undefined;
-    public readonly hostname: string;
-    public readonly port: number|undefined;
-
-    constructor(hubAddressString: string) {
-        const PORTSEP: string = ":";
-        let addressIsUrl: boolean = false;
-        if (hubAddressString.toLowerCase().startsWith("http://")) {
-            addressIsUrl = true;
-        }
-        else if (hubAddressString.toLowerCase().startsWith("https://")) {
-            addressIsUrl = true;
-        }
-        this.hubAddressString = hubAddressString;
-        if (addressIsUrl) {
-            let hubUrl: URL = new URL(hubAddressString);
-            this.protocol = hubUrl.protocol;
-            this.hostname = hubUrl.hostname;
-            if (hubUrl.port) {
-                this.port = parseInt(hubUrl.port);
-            }
-        }
-        else {
-            let pos = hubAddressString.indexOf(PORTSEP);
-            if (pos < 0) {
-                this.hostname = hubAddressString;
-            }
-            else {
-                this.hostname = hubAddressString.substring(0, pos);
-                let portString: string = hubAddressString.substring(pos + PORTSEP.length);
-                this.port = parseInt(portString);
-            }
-        }
-    }
-
-    public toString(): string {
-        return this.hubAddressString;
-    }
-}
 
 /** Object to manage an HTTP session with a CodeSonar hub. */
 export class CSHubClient {
@@ -584,27 +547,65 @@ export class CSHubClient {
         return analysisInfoArray;
     }
 
+    private _makeSarifQueryString(options: CSHubSarifSearchOptions|undefined): string|undefined {
+        const sarifIndentLength: number|undefined = options?.indentLength;
+        const sarifArtifactListing: boolean|undefined = options?.artifactListing;
+        const warningFilter: string|undefined = options?.warningFilter;
+        let queryArgs: string[] = [];
+        if (warningFilter) {
+            queryArgs.push(`filter=${encodeURIComponent(warningFilter)}`);
+        }
+        if (sarifIndentLength !== undefined) {
+            let sarifIndentArg: string = "";
+            if (sarifIndentLength >= 0) {
+                sarifIndentArg = sarifIndentLength.toString();
+            }
+            queryArgs.push(`indent=${encodeURIComponent(sarifIndentArg)}`);
+        }
+        if (sarifArtifactListing !== undefined) {
+            const sarifArtifactListingArg: string = (sarifArtifactListing) ? "1" : "0";
+            queryArgs.push(`artifacts=${encodeURIComponent(sarifArtifactListingArg)}`);
+        }
+        let queryString: string|undefined;
+        if (queryArgs.length > 0) {
+            queryString = queryArgs.join('&');
+        }
+        return queryString;
+    }
+
+    /** Fetch SARIF results for a single analysis. */
     public async fetchSarifAnalysisStream(
             analysisId: CSAnalysisId,
-            srcRootPath?: string,
+            options?: CSHubSarifSearchOptions,
             ): Promise<Readable>
     {
-        let sarifAnalysisUrlPath: string = `/analysis/${encodeURIComponent(analysisId)}-allwarnings.sarif?filter=1`;
-        if (srcRootPath) {
-            sarifAnalysisUrlPath += `&srcroot=${encodeURIComponent(srcRootPath)}`;
+        let sarifAnalysisUrlPath: string = `/analysis/${encodeURIComponent(analysisId)}-allwarnings.sarif`;
+        const queryString: string|undefined = this._makeSarifQueryString(options);
+        if (queryString) {
+            sarifAnalysisUrlPath += '?' + queryString;
         }
         return this.fetch(sarifAnalysisUrlPath);
     }
 
+    /** Fetch SARIF results from a single analysis that are not present in a second, base analysis. */
     public async fetchSarifAnalysisDifferenceStream(
             headAnalysisId: CSAnalysisId,
             baseAnalysisId: CSAnalysisId,
+            options?: CSHubSarifSearchOptions,
             ): Promise<Readable>
     {
         // warning_detail_search.sarif is not supported prior to CodeSonar 7.1:
         const scope: string = `aid:${headAnalysisId}`;
         const query: string = `aid:${headAnalysisId} DIFFERENCE aid:${baseAnalysisId}`;
-        const sarifAnalysisUrlPath: string = `/warning_detail_search.sarif?scope=${encodeURIComponent(scope)}&query=${encodeURIComponent(query)}&artifacts=0&filter=1`;
+        let sarifAnalysisUrlPath: string = `/warning_detail_search.sarif?scope=${encodeURIComponent(scope)}&query=${encodeURIComponent(query)}`;
+        const queryString: string|undefined = this._makeSarifQueryString(options);
+        if (queryString) {
+            sarifAnalysisUrlPath += '&' + queryString;
+        }
+        // Ensure artifacts table is disabled by default:
+        if (options?.artifactListing === undefined) {
+            sarifAnalysisUrlPath += '&' + this._makeSarifQueryString({artifactListing: false});
+        }
         return this.fetch(sarifAnalysisUrlPath);
     }
 
