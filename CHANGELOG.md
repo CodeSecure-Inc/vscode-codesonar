@@ -7,6 +7,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 ## 0.9.0 Beta
 * Reorganize extension commands.
 * Improve user experience.
+* Add several new settings.
 * Bug fixes
 
 ## 0.0.3 Prototype
