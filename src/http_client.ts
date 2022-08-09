@@ -1,6 +1,7 @@
 /** A high-level, promise-based HTTP client object. */
 import * as http from 'http';
 import * as https from 'https';
+import { Readable } from 'stream';
 
 import { Logger } from './logger';
 
@@ -40,7 +41,7 @@ export interface HTTPClientRequestOptions {
 }
 
 export interface HTTPReceivedResponse {
-    body: NodeJS.ReadableStream;
+    body: Readable;
     status: HTTPStatusError;
     headers: Record<string,string>;
 }

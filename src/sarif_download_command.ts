@@ -1,6 +1,7 @@
 import { strict as assert } from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
+import { Readable } from 'stream';
 
 import {
     window,
@@ -615,10 +616,10 @@ async function downloadSarifResults(
         destinationFilePath: string,
         analysisInfo: CSAnalysisInfo,
         baseAnalysisInfo?: CSAnalysisInfo,
-        ): Promise<void> {
+        ): Promise<string> {
     const analysisId: CSAnalysisId = analysisInfo.id;
     const baseAnalysisId: CSAnalysisId|undefined = baseAnalysisInfo?.id;
-    await window.withProgress({
+    return await window.withProgress({
         location: ProgressLocation.Notification,
         title: "Downloading CodeSonar analysis...",
         cancellable: true,
@@ -629,45 +630,94 @@ async function downloadSarifResults(
         // TODO: download to temporary location and move it when finished
         const destinationStream: NodeJS.WritableStream = fs.createWriteStream(destinationFilePath);
 
-        token.onCancellationRequested(() => {
-            // TODO abort download.  Cleanup files on disk.
-        });
         progress.report({increment: 0});
-        // TODO Report actual progress downloading
-        //  This just counts a few seconds and leaves the bar mostly full until the download completes:
-        const delay: number = 1000;
-        // Total length of progress meter according to documentation:
+        // The progress meter sums up the increment values that we give it,
+        //  when the increments add to 100, the progress bar is full.
         const maxProgressSize: number = 100;
-        // Progress meter item where we hang until download completes:
-        //  Even though this is 40%, this appears to fill the bar about 80%.
-        //   Anything larger and the bar will appear full.
-        const hangingProgressSize: number = 40;
-        const progressStepCount: number = 5;
-        const stepSize: number = hangingProgressSize / progressStepCount;
-        for (let i: number = 1*stepSize,  t = delay;
-                i < hangingProgressSize;
-                i += stepSize,  t += delay) {
-            ((progressSize: number, timeout: number) => {
-                setTimeout(() => {
-                    progress.report({increment: progressSize});
-                }, 1*timeout);    
-            })(i, t);
-        }
-        let sarifPromise: Promise<NodeJS.ReadableStream>;
+        // We don't know how long it will take to download the warnings.
+        // This code computes a sort of inverted base-2 exponential decay.
+        //  The basic formula is:
+        //       f(t) = 1 - 2^(-k*t)
+        //  Notice that f(0) = 0, and f(Inf) -> 1.
+        //  Notice also that when `k = 1/t`, we have `f(t) = 1/2`,
+        //   so k is the time until we are halfway done.
+        //  Since the VS Code progress meter sums-up the values we give it,
+        //   we actually want f to express the integral of some "increment" function.
+        //   Therefore the increment function is basically the derivative of f:
+        //       f'(t) = k*ln(2)*2^(-k*t)
+        //  This code will update the progress meter periodically,
+        //   once per time "interval", `dt`.
+        //   For the sum to work,
+        //    each increment value must be multiplied by the interval period.
+        //    This product is the term of the integral: `f'(t)*dt`.
+        //   Finally, we must scale the value by the progress meter size (100).
+        // In practice, a "halfDoneTime" of 1 minute seems to be pretty good.
+        //  It shows visible progress and doesn't jump too much on small downloads.
+        //  However, it is likely to be frustrating for large downloads.
+        const intervalMS: number = 1000;
+        const halfDoneTimeMS: number = 1.0 * 60.0 * 1000.0; // 1 minute
+        const k: number = 1.0/halfDoneTimeMS;
+        const ln2: number = Math.log(2.0);
+        const incrementFunction: (t: number) => number = (t: number): number => {
+            return intervalMS*k*ln2*Math.pow(2.0, (-1.0*t*k));
+        };
+        const startTimeMS: number = Date.now();
+        let progressRemaining: number = maxProgressSize;
+        const timer = setInterval((): void => {
+                const nowMS: number = Date.now();
+                const t: number = (nowMS - startTimeMS);
+                const progressSize: number = maxProgressSize * incrementFunction(t);
+                progress.report({increment: progressSize});
+                progressRemaining -= progressSize;
+            },
+            intervalMS);
+        let sarifPromise: Promise<Readable>;
         if (baseAnalysisId !== undefined) {
             sarifPromise = hubClient.fetchSarifAnalysisDifferenceStream(analysisId, baseAnalysisId);
         }
         else {
             sarifPromise = hubClient.fetchSarifAnalysisStream(analysisId);
         }
-        return new Promise<void>((resolve, reject) => {
-            sarifPromise.then((sarifStream) => {
+        return new Promise<string>((
+            resolve: (savedFilePath: string) => void,
+            _reject: (e: unknown) => void,
+        ): void => {
+            const reject: (e: unknown) => void = (e: unknown): void => {
+                clearInterval(timer);
+                destinationStream.end();
+                _reject(e);
+            };
+            sarifPromise.then((sarifStream: Readable): void => {
                 sarifStream.pipe(destinationStream
                     ).on('error', reject
                     ).on('finish', (): void => {
-                        resolve();
+                        clearInterval(timer);
+                        // Show a full progress bar for a moment before we finish:
+                        if (progressRemaining > 0) {
+                            progress.report({increment: progressRemaining});
+                        }
+                        setTimeout((): void => {
+                            // The pipe will automatically call .end() on the destinationStream.
+                            //destinationStream.end();
+                            resolve(destinationFilePath);
+                        },
+                        intervalMS);
                     });
-            }).catch(reject);
+                token.onCancellationRequested(() => {
+                    sarifStream.unpipe();
+                    sarifStream.destroy();
+                    destinationStream.end(
+                        (): void => {
+                            fs.unlink(destinationFilePath, (e: unknown): void => {
+                                if (e) {
+                                    reject(e);
+                                } else {
+                                    reject(new Error("Canceled"));
+                                }
+                            });
+                        });
+                });
+                }).catch(reject);
         });
     });
 }
