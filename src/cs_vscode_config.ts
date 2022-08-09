@@ -21,7 +21,7 @@ const CONFIG_HUB_USER: string = "hubUser";
 const CONFIG_HUB_PWFILE: string = "hubPasswordFile";
 const CONFIG_HUB_CERT: string = "hubUserCertificate";
 const CONFIG_HUB_KEY: string = "hubUserCertificateKey";
-const CONFIG_ANALYSIS_PROJECT_PATH: string = "projectPath";
+const CONFIG_ANALYSIS_PROJECT_TREE_PATH: string = "project";
 const CONFIG_ANALYSIS_PROJECT_FILE: string = "projectFile";
 const CONFIG_BASE_ANALYSIS_NAME: string = "baselineAnalysis";
 const CONFIG_WARNING_FILTER: string = "warningFilter";
@@ -109,7 +109,7 @@ export class CSConfigIO {
 
     /** Save CodeSonar project path to config store. */
     async writeProjectPath(projectPath: string): Promise<void> {
-        await this.wsConfig.update(CONFIG_ANALYSIS_PROJECT_PATH, projectPath);
+        await this.wsConfig.update(CONFIG_ANALYSIS_PROJECT_TREE_PATH, projectPath);
     }
 
     /** Get extension behavior options. */
@@ -175,7 +175,7 @@ export class CSConfigIO {
             timeoutMilliseconds = timeoutSeconds * 1000;
         }
         return {
-            path: wsConfig.get<string>(CONFIG_ANALYSIS_PROJECT_PATH),
+            path: wsConfig.get<string>(CONFIG_ANALYSIS_PROJECT_TREE_PATH),
             projectFilePath: wsConfig.get<string>(CONFIG_ANALYSIS_PROJECT_FILE),
             warningFilter: wsConfig.get<string>(CONFIG_WARNING_FILTER),
             baselineAnalysis: wsConfig.get<string>(CONFIG_BASE_ANALYSIS_NAME) || undefined,  // make empty string undefined
