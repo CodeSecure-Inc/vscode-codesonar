@@ -1,5 +1,6 @@
 /** An object that facilitates access to a CodeSonar hub. */
 import { readFile } from 'fs/promises';
+import { Readable } from 'stream';
 
 import { 
     asErrnoException,
@@ -343,7 +344,7 @@ export class CSHubClient {
         data: string,
         options?: HTTPClientRequestOptions,
         contentType: string = "application/x-www-form-urlencoded",
-    ): Promise<NodeJS.ReadableStream> {
+    ): Promise<Readable> {
         const httpConn: HTTPClientConnection = await this.getHttpClientConnection();
         const httpOptions: HTTPClientRequestOptions = { 
             method: "POST",
@@ -482,9 +483,9 @@ export class CSHubClient {
     }
 
     /** Fetch a raw resource from the hub. */
-    public fetch(resource: string): Promise<NodeJS.ReadableStream> {
-        return new Promise<NodeJS.ReadableStream>((
-                resolve: (resIO: NodeJS.ReadableStream) => void,
+    public fetch(resource: string): Promise<Readable> {
+        return new Promise<Readable>((
+                resolve: (resIO: Readable) => void,
                 reject: (e: any) => void,
             ) => {
                 this.getHttpClientConnection().then(
@@ -586,7 +587,7 @@ export class CSHubClient {
     public async fetchSarifAnalysisStream(
             analysisId: CSAnalysisId,
             srcRootPath?: string,
-            ): Promise<NodeJS.ReadableStream>
+            ): Promise<Readable>
     {
         let sarifAnalysisUrlPath: string = `/analysis/${encodeURIComponent(analysisId)}-allwarnings.sarif?filter=1`;
         if (srcRootPath) {
@@ -598,7 +599,7 @@ export class CSHubClient {
     public async fetchSarifAnalysisDifferenceStream(
             headAnalysisId: CSAnalysisId,
             baseAnalysisId: CSAnalysisId,
-            ): Promise<NodeJS.ReadableStream>
+            ): Promise<Readable>
     {
         // warning_detail_search.sarif is not supported prior to CodeSonar 7.1:
         const scope: string = `aid:${headAnalysisId}`;
