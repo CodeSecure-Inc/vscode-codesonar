@@ -44,6 +44,8 @@ import * as sarifView from './sarif_viewer';
 const SARIF_EXT_NAME: string = 'sarif';
 const SARIF_EXT: string = '.' + SARIF_EXT_NAME;
 
+const CS_WARN_DIFF_EXT: string = '.new';
+
 interface QuickPickValueItem<T> extends QuickPickItem {
     value: T;
 }
@@ -456,7 +458,11 @@ async function executeCodeSonarSarifDownload(
     }
     if (analysisInfo !== undefined) {
         const defaultFileName: string = replaceInvalidFileNameChars(analysisInfo.name);
-        let defaultDestinationPath: string = defaultFileName + SARIF_EXT;
+        let defaultDestinationPath: string = defaultFileName;
+        if (baseAnalysisInfo) {
+            defaultDestinationPath += CS_WARN_DIFF_EXT;
+        }
+        defaultDestinationPath += SARIF_EXT;
         if (workspaceFolderPath !== undefined) {
             // TODO: remember previous saved path and compute default based on it.
             defaultDestinationPath = path.join(workspaceFolderPath, defaultDestinationPath);
