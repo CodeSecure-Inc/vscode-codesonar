@@ -399,20 +399,21 @@ export class CSHubClient {
                 httpOptions.timeout = options.timeout;
             }
         }
-        // Parse the data so we can learn if it is okay to read the response for error information.
+        const resourceUrl: URL = httpConn.resourceURL(resource);
+        // Parse the URL so we can learn if it is okay to read the response for error information.
         //  This is somewhat inefficient
         //   since we could require the caller to tell us explicitly,
         //   but this method seems to be more convenient for the caller.
         const formParams: URLSearchParams = ((contentType === FORM_URLENCODED_CONTENT_TYPE)
             ? new URLSearchParams(data)
             : new URLSearchParams());
-        const responseTryPlaintextValue: string|null = formParams.get(RESPONSE_TRY_PLAINTEXT);
+        const responseTryPlaintextValue: string|null = resourceUrl.searchParams.get(RESPONSE_TRY_PLAINTEXT);
         const responseIsErrorMessage: boolean = parseCSHubParamBoolean(responseTryPlaintextValue) || false;
         this.log(`Posting resource to ${resource}`);
         // The hub will return HTTP 501 if Transfer-Encoding header is set.
         // To avoid this, we must ensure Content-Length header is set.
         // We assume that the httpConn.request() method will do this for us:
-        const resp: HTTPReceivedResponse = await httpConn.request(resource, httpOptions, data);
+        const resp: HTTPReceivedResponse = await httpConn.request(resourceUrl, httpOptions, data);
         if (resp.status.code !== 200) {
             this.log(`HTTP Status: ${resp.status}`);
             const hubError: Error = await this.createHubRequestError(resp, responseIsErrorMessage);
