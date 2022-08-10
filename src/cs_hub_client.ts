@@ -5,6 +5,7 @@ import { Readable } from 'stream';
 import { 
     asErrnoException,
     errorToString,
+    readTextStream,
 } from './common_utils';
 import { Logger } from './logger';
 
@@ -18,6 +19,10 @@ import {
 } from './http_client';
 import { CSHubAddress } from './csonar_ex';
 
+
+const FORM_URLENCODED_CONTENT_TYPE: string = "application/x-www-form-urlencoded";
+
+const RESPONSE_TRY_PLAINTEXT: string = "response_try_plaintext";
 
 type CSHubRecordId = string;
 export type CSAnalysisId = CSHubRecordId;
@@ -71,7 +76,13 @@ export interface CSHubSarifSearchOptions {
     artifactListing?: boolean;
 }
 
-type CSHubSignInFormBoolean = "no" | "yes";
+
+type CSHubParamBoolean = "0" | "1";
+type CSHubSignInFormBoolean = CSHubParamBoolean;
+
+const CS_HUB_PARAM_TRUE: CSHubParamBoolean = "1";
+const CS_HUB_PARAM_FALSE: CSHubParamBoolean = "0";
+
 
 interface CSHubSignInForm {
     /* eslint-disable @typescript-eslint/naming-convention */
@@ -151,6 +162,39 @@ export function parseCSProjectId(projectId: string|number): CSProjectId {
 /** Convert an analysis ID (probably originating from JSON) into a CSAnalysisId type. */
 export function parseCSAnalysisId(analysisId: string|number): CSAnalysisId {
     return parseCSHubRecordId(analysisId);
+}
+
+/** Parse a hub query or post-data parameter as a boolean value. */
+function parseCSHubParamBoolean(s: string|undefined|null): boolean|undefined {
+    let b: boolean|undefined;
+    if (s === undefined || s === null) {
+        b = undefined;
+    }
+    else if (s === "yes" || s === "1") {
+        b = true;
+    }
+    else if (s === "no" || s === "0") {
+        b = false;
+    }
+    return b;
+}
+
+/** Specialize an HTTPStatusError for the CodeSonar hub. */
+export class CSHubRequestError extends HTTPStatusError {
+    public readonly statusMessage: string;
+    public readonly hubMessage: string;
+
+    constructor(statusMessage: string, code: number, hubMessage?: string) {
+        const message: string = hubMessage || statusMessage;
+        super(message, code);
+        this.name = 'CSHubRequestError';
+        this.statusMessage = statusMessage;
+        this.hubMessage = hubMessage ?? "";
+    }
+
+    public toString(): string {
+        return this.message;
+    }
 }
 
 
@@ -264,6 +308,30 @@ export class CSHubClient {
         return this.httpConn;
     }
 
+    /** Helper method for reading error message from hub response. */
+    private async createHubRequestError(
+        resp: HTTPReceivedResponse,
+        responseIsErrorMessage: boolean,
+    ): Promise<HTTPStatusError> {
+        const maxErrorMessageLength: number = 4096;
+        let hubError: HTTPStatusError = resp.status;
+        if (responseIsErrorMessage) {
+            const errorMessage: string = await readTextStream(resp.body, maxErrorMessageLength);
+            if (errorMessage.startsWith("<!DOCTYPE")) {
+                // Assume the response was HTML, we won't try to use it:
+                this.log("Hub returned HTML, but plaintext was expected");
+            }
+            else {
+                this.log(`Hub Error Message: ${errorMessage}`);
+                hubError = new CSHubRequestError(resp.status.message, resp.status.code, errorMessage);    
+            }
+        }
+        else {
+            resp.body.destroy();
+        }
+        return hubError;
+    }
+
     /** Read a JSON stream into a data structure. */
     private parseResponseJson(resIO: NodeJS.ReadableStream): Promise<unknown> {
         return new Promise<unknown>((
@@ -306,17 +374,40 @@ export class CSHubClient {
         resource: string,
         data: string,
         options?: HTTPClientRequestOptions,
-        contentType: string = "application/x-www-form-urlencoded",
+        contentType: string = FORM_URLENCODED_CONTENT_TYPE,
     ): Promise<Readable> {
         const httpConn: HTTPClientConnection = await this.getHttpClientConnection();
         const httpOptions: HTTPClientRequestOptions = { 
             method: "POST",
             headers: {
                 /* eslint-disable @typescript-eslint/naming-convention */
-                "content-type": contentType,
+                "Accept": "text/plain, application/json, text/html",
+                "Accept-Charset": "utf-8",
+                "Content-Type": contentType,
                 /* eslint-enable @typescript-eslint/naming-convention */
             },
         };
+        if (options) {
+            if (options.headers !== undefined
+                && httpOptions.headers !== undefined  // needed for typechecker only
+            ) {
+                for (let headerName of Object.keys(options.headers)) {
+                    httpOptions.headers[headerName] = options.headers[headerName];
+                }
+            }
+            if (options.timeout) {
+                httpOptions.timeout = options.timeout;
+            }
+        }
+        // Parse the data so we can learn if it is okay to read the response for error information.
+        //  This is somewhat inefficient
+        //   since we could require the caller to tell us explicitly,
+        //   but this method seems to be more convenient for the caller.
+        const formParams: URLSearchParams = ((contentType === FORM_URLENCODED_CONTENT_TYPE)
+            ? new URLSearchParams(data)
+            : new URLSearchParams());
+        const responseTryPlaintextValue: string|null = formParams.get(RESPONSE_TRY_PLAINTEXT);
+        const responseIsErrorMessage: boolean = parseCSHubParamBoolean(responseTryPlaintextValue) || false;
         this.log(`Posting resource to ${resource}`);
         // The hub will return HTTP 501 if Transfer-Encoding header is set.
         // To avoid this, we must ensure Content-Length header is set.
@@ -324,10 +415,8 @@ export class CSHubClient {
         const resp: HTTPReceivedResponse = await httpConn.request(resource, httpOptions, data);
         if (resp.status.code !== 200) {
             this.log(`HTTP Status: ${resp.status}`);
-            // TODO: sometimes, we will want the response body as a string
-            // Ignore the rest of the response stream:
-            resp.body.resume();
-            throw resp.status;
+            const hubError: Error = await this.createHubRequestError(resp, responseIsErrorMessage);
+            throw hubError;
         }
 
         this.log("Received OK response");
@@ -342,14 +431,22 @@ export class CSHubClient {
 
     /** Try to sign-in to the hub using hub client credentials.
      *
-     * @returns {Promise<boolean>}  Promise resolving to `true` if sign-in succeeded; `false` if credentials were rejected.
+     *  Returns an sign-in failure message if the sign-in was rejected.
+     *  Throws an error if there is a network error.
+     * 
+     * @returns {Promise<string>}  Promise resolving to empty string if sign-in succeeded; signin failure message if credentials were rejected.
      */
-    public signIn(): Promise<boolean> {
+    public signIn(): Promise<string> {
         // Send sign-in POST request to a page that produces a short response:
-        const signInUrlPath: string = "/";
+        const successMessage: string = "";
+        // response_try_plaintext must be in URL, or it won't work.
+        //  The manual implies it will be respected in the POST data too,
+        //   but that doesn't seem to work.
+        //  We will do both just to be safe.
+        const signInUrlPath: string = `/?${RESPONSE_TRY_PLAINTEXT}=${CS_HUB_PARAM_TRUE}`;
         const options: CSHubClientConnectionOptions = this.options;
-        return new Promise<boolean>((
-            resolve: (succeeded: boolean) => void,
+        return new Promise<string>((
+            resolve: (e: string) => void,
             reject: (e: any) => void,
         ) => {
             if ((options.auth === undefined || options.auth === "certificate")
@@ -358,11 +455,11 @@ export class CSHubClient {
                 if (options.hubcert && options.hubkey) {
                     const sif: CSHubSignInForm = {
                         /* eslint-disable @typescript-eslint/naming-convention */
-                        sif_sign_in: "yes",
-                        sif_ignore_empty_email: "yes",
-                        sif_log_out_competitor: "yes",
-                        response_try_plaintext: "yes",
-                        sif_use_tls: "yes",
+                        sif_sign_in: CS_HUB_PARAM_TRUE,
+                        sif_ignore_empty_email: CS_HUB_PARAM_TRUE,
+                        sif_log_out_competitor: CS_HUB_PARAM_TRUE,
+                        response_try_plaintext: CS_HUB_PARAM_TRUE,
+                        sif_use_tls: CS_HUB_PARAM_TRUE,
                         /* eslint-enable @typescript-eslint/naming-convention */
                     };
                     const sifData: string = encodeURIQuery(sif);
@@ -370,12 +467,14 @@ export class CSHubClient {
                     this.post(signInUrlPath, sifData).then((respBody: NodeJS.ReadableStream): void => {
                         // Ignore response body:
                         respBody.resume();
-                        resolve(true);
+                        resolve(successMessage);
                     }).catch((e: any): void => {
-                        if ((e instanceof HTTPStatusError)
-                                && e.code !== undefined
-                                && e.code === 403) {
-                            resolve(false);
+                        if ((e instanceof CSHubRequestError)
+                            && e.code !== undefined
+                            && e.code === 403
+                        ) {
+                            // Ordinary signin failure:
+                            resolve(e.message);
                         } else {
                             reject(e);
                         }
@@ -404,10 +503,10 @@ export class CSHubClient {
                     passwordPromise.then((password: string): Promise<NodeJS.ReadableStream> => {
                         const sif: CSHubSignInForm = {
                             /* eslint-disable @typescript-eslint/naming-convention */
-                            sif_sign_in: "yes",
-                            sif_ignore_empty_email: "yes",
-                            sif_log_out_competitor: "yes",
-                            response_try_plaintext: "yes",
+                            sif_sign_in: CS_HUB_PARAM_TRUE,
+                            sif_ignore_empty_email: CS_HUB_PARAM_TRUE,
+                            sif_log_out_competitor: CS_HUB_PARAM_TRUE,
+                            response_try_plaintext: CS_HUB_PARAM_TRUE,
                             sif_username: options.hubuser,
                             sif_password: password,
                             /* eslint-enable @typescript-eslint/naming-convention */
@@ -419,12 +518,12 @@ export class CSHubClient {
                         (respBody: NodeJS.ReadableStream): void => {
                             // Ignore response body:
                             respBody.resume();
-                            resolve(true);
+                            resolve(successMessage);
                     }).catch((e: any): void => {
-                        if ((e instanceof HTTPStatusError)
+                        if ((e instanceof CSHubRequestError)
                                 && e.code !== undefined
                                 && e.code === 403) {
-                            resolve(false);
+                            resolve(e.message);
                         } else {
                             reject(e);
                         }
@@ -436,7 +535,7 @@ export class CSHubClient {
                 this.getHttpClientConnection().then(
                     (httpConn: HTTPClientConnection): void => {
                         this.clearSignInCookies(httpConn);
-                        resolve(true);
+                        resolve(successMessage);
                 }).catch(reject);
             }
             else {
@@ -449,12 +548,12 @@ export class CSHubClient {
     public fetch(resource: string): Promise<Readable> {
         return new Promise<Readable>((
                 resolve: (resIO: Readable) => void,
-                reject: (e: any) => void,
+                reject: (e: unknown) => void,
             ) => {
                 this.getHttpClientConnection().then(
                     (httpConn: HTTPClientConnection): Promise<HTTPReceivedResponse> => {
                         this.log(`Fetching resource ${resource}`);
-                            return httpConn.request(resource);
+                        return httpConn.request(resource);
                 }).then((resp: HTTPReceivedResponse): void => {
                     if (resp.status.code === 200) {
                         this.log("Received OK response");
@@ -462,8 +561,12 @@ export class CSHubClient {
                     }
                     else {
                         this.log(`HTTP Status: ${resp.status}`);
-                        // TODO: read response body to get error details
-                        reject(resp.status);
+                        const responseTryPlaintextValue: string|null = resp.url.searchParams.get(RESPONSE_TRY_PLAINTEXT);
+                        const responseIsErrorMessage: boolean = parseCSHubParamBoolean(responseTryPlaintextValue) || false;
+                        this.createHubRequestError(
+                            resp,
+                            responseIsErrorMessage,
+                        ).then(reject).catch(reject);
                     }
                 }).catch(reject);
             });
@@ -484,6 +587,7 @@ export class CSHubClient {
             const projectSearchQuery: string = encodeURIComponent(`ptree_path=${projectSearchLiteral}`);
             projectSearchPath += "&query=" + projectSearchQuery;
         }
+        projectSearchPath += `&${RESPONSE_TRY_PLAINTEXT}=${CS_HUB_PARAM_TRUE}`;
         const respJson: unknown = await this.fetchJson(projectSearchPath);
         const respResults: CSHubApiSearchResults<CSHubProjectRow> = respJson as CSHubApiSearchResults<CSHubProjectRow>;
         this.log("Received project JSON");
@@ -518,7 +622,7 @@ export class CSHubClient {
     }
 
     public async fetchAnalysisInfo(analysisId: CSAnalysisId): Promise<CSAnalysisInfo[]> {
-        const analysisListPath: string = `/project/${encodeURIComponent(analysisId)}.json`;
+        const analysisListPath: string = `/project/${encodeURIComponent(analysisId)}.json?${RESPONSE_TRY_PLAINTEXT}=${CS_HUB_PARAM_TRUE}`;
         const respJson: unknown = await this.fetchJson(analysisListPath);
         const respResults: CSHubApiSearchResults<CSHubAnalysisRow> = respJson as CSHubApiSearchResults<CSHubAnalysisRow>;
         let analysisInfoArray: CSAnalysisInfo[] = [];
@@ -566,6 +670,8 @@ export class CSHubClient {
             const sarifArtifactListingArg: string = (sarifArtifactListing) ? "1" : "0";
             queryArgs.push(`artifacts=${encodeURIComponent(sarifArtifactListingArg)}`);
         }
+        queryArgs.push(`${RESPONSE_TRY_PLAINTEXT}=${CS_HUB_PARAM_TRUE}`);
+
         let queryString: string|undefined;
         if (queryArgs.length > 0) {
             queryString = queryArgs.join('&');
