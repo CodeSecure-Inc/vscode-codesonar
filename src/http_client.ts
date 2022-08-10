@@ -41,6 +41,7 @@ export interface HTTPClientRequestOptions {
 }
 
 export interface HTTPReceivedResponse {
+    url: URL;
     body: Readable;
     status: HTTPStatusError;
     headers: Record<string,string>;
@@ -361,6 +362,18 @@ export class HTTPClientConnection {
         return cookies;
     }
 
+    /** Transform a resource relative to the the server to an absolute URL. */
+    public resourceURL(resource: string|URL): URL {
+        let targetUrl: URL;
+        if (typeof resource === "string") {
+            targetUrl = new URL(resource, this.baseUrlString);
+        }
+        else {
+            targetUrl = resource;
+        }
+        return targetUrl;
+    }
+
     /** Make a request to the server.
      *  @returns Promise containing response stream.
      */
@@ -371,13 +384,7 @@ export class HTTPClientConnection {
             dataEncoding: BufferEncoding = 'utf8',
             ) : Promise<HTTPReceivedResponse> {
         const defaultMethod: string = "GET";
-        let targetUrl: URL;
-        if (typeof resource === "string") {
-            targetUrl = new URL(resource, this.baseUrlString);
-        }
-        else {
-            targetUrl = resource;
-        }
+        const targetUrl: URL = this.resourceURL(resource);
         let httpOptions: HTTPRequestOptions = urlToHttpOptions(targetUrl);
         httpOptions.method = defaultMethod;
         httpOptions.timeout = this.timeout;
@@ -485,6 +492,7 @@ export class HTTPClientConnection {
                 }
                 else if (redirectPromise === undefined) {
                     resolve({
+                        url: targetUrl,
                         body: res,
                         status: httpStatus,
                         headers: headers,

@@ -292,13 +292,11 @@ async function executeCodeSonarSarifDownload(
         hubClient.logger = logger;
         let signInSucceeded: boolean = false;
         try {
-            // TODO: if sign-in failed, we'd like to know exactly why.  Need to get 403 response body.
-            // signIn will return false if hub returns HTTP 403 Forbidden.
-            //  signIn may throw an error if some other signIn problem occurs (e.g. cannot connect to server).
-            signInSucceeded = await verifyHubCredentials(hubClient);
-            if (!signInSucceeded) {
-                throw Error("Access forbidden");
+            const signInErrorMessage: string = await verifyHubCredentials(hubClient);
+            if (signInErrorMessage) {
+                throw Error(signInErrorMessage);
             }
+            signInSucceeded = true;
         }
         catch (e: any) {
             const messageHeader: string = "CodeSonar hub sign-in failure";
@@ -494,11 +492,11 @@ async function executeCodeSonarSarifDownload(
 
 /** Try to sign-in to hub.
  * 
- *  @return True if sign-in succeeded, False if sign-in was rejected.
- *  @throws Error Sign-in process failed, perhaps due to network error.
+ *  @return empty string if sign-in succeeded, sign-in failure message if sign-in was rejected.
+ *  @throws Error  Sign-in process failed, perhaps due to network error.
  */
-async function verifyHubCredentials(hubClient: CSHubClient): Promise<boolean> {
-    return await window.withProgress<boolean>({
+async function verifyHubCredentials(hubClient: CSHubClient): Promise<string> {
+    return await window.withProgress<string>({
             cancellable: false,
             location: ProgressLocation.Window,
             title: "connecting to CodeSonar hub",
@@ -506,8 +504,7 @@ async function verifyHubCredentials(hubClient: CSHubClient): Promise<boolean> {
         (
             progress: IncrementalProgress,
             cancelToken: CancellationToken,
-        ): Thenable<boolean> => {
-            let signInSucceeded: boolean = false;
+        ): Thenable<string> => {
             return hubClient.signIn();
         });
 }
