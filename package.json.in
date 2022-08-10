@@ -7,6 +7,7 @@
     "icon": "resources/grammatech.red-g-border.128x128.png",
     "license": "SEE LICENSE IN LICENSE.txt",
     "homepage": "https://www.grammatech.com/codesonar",
+    "qna": "https://support.grammatech.com",
     "repository": {
         "type": "git",
         "url": ""
@@ -25,6 +26,9 @@
         "SAST",
         "Security",
         "Static analysis"
+    ],
+    "extensionDependencies": [
+        "MS-SarifVSCode.sarif-viewer"
     ],
     "activationEvents": [
         "onCommand:vscode-codesonar.download-full-sarif",
