@@ -3,7 +3,7 @@
     "displayName": "CodeSonar",
     "description": "CodeSonar Static Analysis",
     "version": "$(CSO_VSCODE_VERSION)",
-    "publisher": "Grammatech",
+    "publisher": "GrammaTech",
     "icon": "resources/grammatech.red-g-border.128x128.png",
     "license": "SEE LICENSE IN LICENSE.txt",
     "homepage": "https://www.grammatech.com/codesonar",

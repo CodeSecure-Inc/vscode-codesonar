@@ -123,7 +123,7 @@ export class CSConfigIO {
             autoOpenSarifViewer: (wsConfig.get<boolean>("autoOpenSarifViewer") || false),
         };
         const sarifWhitespaceFormat: string|undefined = wsConfig.get<string>("sarifWhitespaceFormat");
-        if (sarifWhitespaceFormat !== undefined) {
+        if (sarifWhitespaceFormat) {
             if (sarifWhitespaceFormat === SARIF_WHITESPACE_FORMAT_INDENTED) {
                 options.sarifIndentLength = SARIF_INDENT_LENGTH;
             }
