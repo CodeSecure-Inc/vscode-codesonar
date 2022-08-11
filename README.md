@@ -8,9 +8,14 @@ Download analysis results in SARIF format from your CodeSonar hub.  Use "Sarif V
 
 Provides the following commands:
 
-    * `CodeSonar: Download SARIF: Entire Analysis`: Download CodeSonar analysis results in SARIF format.  All warning results for a single CodeSonar analysis will be downloaded.
-    * `CodeSonar: Download SARIF: New Warnings`: Download CodeSonar analysis results in SARIF format.  Warnings which are present in a "new" analysis and which are not present in a "baseline" analysis will be downloaded.
-    * `CodeSonar: Clear hub user password`: Remove user's hub password from VS Code's password store.
+* `CodeSonar: Download SARIF: Entire Analysis`: 
+  Download CodeSonar analysis results in SARIF format.
+  All warning results for a single CodeSonar analysis will be downloaded.
+* `CodeSonar: Download SARIF: New Warnings`:
+  Download CodeSonar analysis results in SARIF format.
+  Warnings which are present in a "new" analysis and which are not present in a "baseline" analysis will be downloaded.
+* `CodeSonar: Clear hub user password`:
+  Remove user's hub password from VS Code's password store.
 
 CodeSonar hub authentication information and other preferences are managed in the VS Code settings.
 
