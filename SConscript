@@ -73,14 +73,21 @@ env.AddPreAction(
 
 
 cso_vscode_pkg = Dir('.')
-cso_vscode_dist = Dir('out')
-cso_vscode_root = node_modules + [
-    File('tsconfig.json'),
-#    File('tslint.json'),
-]
 
+cso_vscode_deps = node_modules
+cso_vscode_deps += [File(x) for x in [
+    'tsconfig.json',
+    '.vscodeignore',
+]]
+cso_vscode_deps = sorted(cso_vscode_deps)
 
-cso_vscode_project_source = sorted(env.GTFindFiles('src'))
+cso_vscode_project_source = env.GTFindFiles('src')
+cso_vscode_project_source += [File(x) for x in [
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE.txt",
+]]
+cso_vscode_project_source = sorted(cso_vscode_project_source)
 
 csonar_vscode_extension_vsix_fname = f'{csonar_vscode_pkg_name}-{csonar_vscode_version_str}{VSIX_EXT}'
 
@@ -94,7 +101,9 @@ csonar_vscode_extension_vsix = env.NPM(
     ],
 )
 
-env.Depends(csonar_vscode_extension_vsix, node_modules)
+env.Depends(
+    csonar_vscode_extension_vsix,
+    cso_vscode_deps)
 
 # Remove all (old) .vsix files when we clean:
 env.Clean(csonar_vscode_extension_vsix, env.Glob(f'*{VSIX_EXT}'))
