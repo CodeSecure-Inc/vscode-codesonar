@@ -18,7 +18,12 @@ export function asErrnoException(e: unknown): NodeJS.ErrnoException|undefined {
 
 /** Convert an error object received in a catch statement into a string suitable for printing.
  *
- *  @returns empty string if error could not be converted to a string.
+ *  @param e - error value of unknown type.
+ *  @param verbose - boolean, true if extra error information should be inserted into the output message.
+ *  @param message - string, default string in case an error message cannot be extracted from the error value.
+ *  @returns a message extracted from the error value.
+ *     If a message could not be extracted, then returns the value of the `message` parameter.
+ *     If the `message` parameter is not defined, then returns an empty string.
  */
 export function errorToString(
         e: unknown,
@@ -30,7 +35,7 @@ export function errorToString(
             message?: string,
         } = {}
     ): string {
-    let errorMessage: string = message ?? '';
+    let errorMessage: string;
     if (e === undefined) {
         errorMessage = '<UNDEFINED>';
     }
@@ -60,6 +65,9 @@ export function errorToString(
             errorMessage = e.toString();
         }
     }
+    else {
+        errorMessage = message ?? '';
+    }
 
     return errorMessage;
 }
@@ -73,13 +81,16 @@ export function replaceInvalidFileNameChars(s: string, replacement: string = '_'
 }
 
 /** Read an entire stream into a string. */
-export async function readTextStream(inIO: NodeJS.ReadableStream, maxLength?: number|undefined): Promise<string> {
+export function readTextStream(inIO: NodeJS.ReadableStream, maxLength?: number|undefined): Promise<string> {
     return new Promise<string>((
         resolve: (outText: string) => void,
         reject: (e: unknown) => void,
         ): void => {
             const chunks: Array<string|Buffer> = [];
             let outLength: number = 0;
+            if (!inIO.readable) {
+                reject(new Error("Text stream is not readable, perhaps it has already been read."));
+            }
             inIO.on('error', reject
             ).on('data', (chunk: string|Buffer): void => {
                 let pushChunk: string|Buffer|undefined;

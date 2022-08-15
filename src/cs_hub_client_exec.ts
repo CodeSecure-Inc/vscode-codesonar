@@ -105,7 +105,7 @@ function main(
         const hubClient: CSHubClient = new CSHubClient(hubAddress, hubOptions);
         hubClient.logger = console;
         const targetUrlPath: string = targetUrlString;
-        hubClient.signIn().then((message: string): void => {
+        hubClient.signIn().then((message: string|undefined): void => {
             if (message) {
                 errorHandler(`Hub sign-in rejected: ${message}`);
             }
