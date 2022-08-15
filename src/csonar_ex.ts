@@ -32,7 +32,7 @@ export class CSProjectFile {
     }
 
     /** Read the analysis ID from the project directory. */
-    public async readAnalysisIdString(): Promise<string> {
+    public readAnalysisIdString(): Promise<string> {
         const aidFilePath: string = path.join(this.prjDirPath, AID_FILE_NAME);
         return new Promise<string>((
             resolve: (idString: string) => void,

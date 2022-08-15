@@ -40,7 +40,7 @@ export async function executeRemoveCSHubUserPassword(
         hubUserName = await window.showInputBox({
             ignoreFocusOut: true,
             value: defaultHubUserName,
-            prompt: "Hub user name"
+            prompt: "Hub user"
         });
     }
     if (hubAddressString && hubUserName) {

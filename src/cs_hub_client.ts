@@ -381,7 +381,6 @@ export class CSHubClient {
             method: "POST",
             headers: {
                 /* eslint-disable @typescript-eslint/naming-convention */
-                "Accept": "text/plain, application/json, text/html",
                 "Accept-Charset": "utf-8",
                 "Content-Type": contentType,
                 /* eslint-enable @typescript-eslint/naming-convention */
@@ -435,19 +434,20 @@ export class CSHubClient {
      *  Returns an sign-in failure message if the sign-in was rejected.
      *  Throws an error if there is a network error.
      * 
-     * @returns {Promise<string>}  Promise resolving to empty string if sign-in succeeded; signin failure message if credentials were rejected.
+     * @returns {Promise<string|undefined>}  Promise resolving to undefined if sign-in succeeded
+     *     or sign-in failure message string if credentials were rejected.
      */
-    public signIn(): Promise<string> {
+    public signIn(): Promise<string|undefined> {
         // Send sign-in POST request to a page that produces a short response:
-        const successMessage: string = "";
+        const successMessage: string|undefined = undefined;
         // response_try_plaintext must be in URL, or it won't work.
         //  The manual implies it will be respected in the POST data too,
         //   but that doesn't seem to work.
         //  We will do both just to be safe.
         const signInUrlPath: string = `/?${RESPONSE_TRY_PLAINTEXT}=${CS_HUB_PARAM_TRUE}`;
         const options: CSHubClientConnectionOptions = this.options;
-        return new Promise<string>((
-            resolve: (e: string) => void,
+        return new Promise<string|undefined>((
+            resolve: (e: string|undefined) => void,
             reject: (e: any) => void,
         ) => {
             if ((options.auth === undefined || options.auth === "certificate")
@@ -623,7 +623,8 @@ export class CSHubClient {
     }
 
     public async fetchAnalysisInfo(analysisId: CSAnalysisId): Promise<CSAnalysisInfo[]> {
-        const analysisListPath: string = `/project/${encodeURIComponent(analysisId)}.json?${RESPONSE_TRY_PLAINTEXT}=${CS_HUB_PARAM_TRUE}`;
+        const analysisTableSpec: string = encodeURIComponent("[analysis id.sort:desc]");
+        const analysisListPath: string = `/project/${encodeURIComponent(analysisId)}.json?${RESPONSE_TRY_PLAINTEXT}=${CS_HUB_PARAM_TRUE}&anlgrid=${analysisTableSpec}`;
         const respJson: unknown = await this.fetchJson(analysisListPath);
         const respResults: CSHubApiSearchResults<CSHubAnalysisRow> = respJson as CSHubApiSearchResults<CSHubAnalysisRow>;
         let analysisInfoArray: CSAnalysisInfo[] = [];
@@ -704,14 +705,15 @@ export class CSHubClient {
         // warning_detail_search.sarif is not supported prior to CodeSonar 7.1:
         const scope: string = `aid:${headAnalysisId}`;
         const query: string = `aid:${headAnalysisId} DIFFERENCE aid:${baseAnalysisId}`;
+        const options2: CSHubSarifSearchOptions = (options === undefined) ? {} : Object.assign({}, options);
+        // Ensure artifacts table is disabled by default:
+        if (options2.artifactListing === undefined) {
+            options2.artifactListing = false;
+        }
         let sarifAnalysisUrlPath: string = `/warning_detail_search.sarif?scope=${encodeURIComponent(scope)}&query=${encodeURIComponent(query)}`;
-        const queryString: string|undefined = this._makeSarifQueryString(options);
+        const queryString: string|undefined = this._makeSarifQueryString(options2);
         if (queryString) {
             sarifAnalysisUrlPath += '&' + queryString;
-        }
-        // Ensure artifacts table is disabled by default:
-        if (options?.artifactListing === undefined) {
-            sarifAnalysisUrlPath += '&' + this._makeSarifQueryString({artifactListing: false});
         }
         return this.fetch(sarifAnalysisUrlPath);
     }

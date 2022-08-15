@@ -111,7 +111,7 @@ async function executeCodeSonarSarifDownload(
     let warningFilter: string|undefined;
     let projectFile: CSProjectFile|undefined;
     if (projectConfig) {
-        if (projectConfig.path && typeof projectConfig.path === "string") {
+        if (projectConfig.path) {
             projectPath = projectConfig.path;
         }
         if (projectConfig.hub) {
@@ -159,7 +159,7 @@ async function executeCodeSonarSarifDownload(
         inputHubAddressString = await window.showInputBox(
             {
                 ignoreFocusOut: true,
-                prompt: "Hub Address",
+                prompt: "Hub address",
                 value: defaultHubAddressString,
             }
         );
@@ -170,7 +170,7 @@ async function executeCodeSonarSarifDownload(
             inputHubUserName = await window.showInputBox(
                 {
                     ignoreFocusOut: true,
-                    prompt: "Hub User",
+                    prompt: "Hub user",
                     value: anonymousUserName,
                 }
             );
@@ -292,13 +292,13 @@ async function executeCodeSonarSarifDownload(
         hubClient.logger = logger;
         let signInSucceeded: boolean = false;
         try {
-            const signInErrorMessage: string = await verifyHubCredentials(hubClient);
-            if (signInErrorMessage) {
+            const signInErrorMessage: string|undefined = await verifyHubCredentials(hubClient);
+            if (signInErrorMessage !== undefined) {
                 throw Error(signInErrorMessage);
             }
             signInSucceeded = true;
         }
-        catch (e: any) {
+        catch (e: unknown) {
             const messageHeader: string = "CodeSonar hub sign-in failure";
             const messageBody: string = errorToString(e, { message: "Internal Error"});
             const errorMessage = `${messageHeader}: ${messageBody}`;
@@ -412,7 +412,14 @@ async function executeCodeSonarSarifDownload(
         }
         else if (!withAnalysisBaseline || baseAnalysisInfo !== undefined) {
             if (projectFile !== undefined) {
-                analysisInfo = await getAnalysisFromProjectFile(projectFile);
+                const analysisId: CSAnalysisId = await getAnalysisIdFromProjectFile(projectFile);
+                // Use the prj file name as the analysis name here,
+                //  ultimately this will become the default name for the SARIF file:
+                const analysisName: string = projectFile.baseName;
+                analysisInfo = {
+                    id: analysisId,
+                    name: analysisName,
+                };
             }
             if (analysisInfo === undefined) {
                 analysisInfo = await showAnalysisQuickPick(targetAnalysisInfoArray, "Select an Analysis...");
@@ -492,11 +499,12 @@ async function executeCodeSonarSarifDownload(
 
 /** Try to sign-in to hub.
  * 
- *  @return empty string if sign-in succeeded, sign-in failure message if sign-in was rejected.
+ *  @return undefined if sign-in succeeded, 
+ *     or sign-in failure message if sign-in was rejected.
  *  @throws Error  Sign-in process failed, perhaps due to network error.
  */
-async function verifyHubCredentials(hubClient: CSHubClient): Promise<string> {
-    return await window.withProgress<string>({
+async function verifyHubCredentials(hubClient: CSHubClient): Promise<string|undefined> {
+    return await window.withProgress<string|undefined>({
             cancellable: false,
             location: ProgressLocation.Window,
             title: "connecting to CodeSonar hub",
@@ -504,7 +512,9 @@ async function verifyHubCredentials(hubClient: CSHubClient): Promise<string> {
         (
             progress: IncrementalProgress,
             cancelToken: CancellationToken,
-        ): Thenable<string> => {
+        ): Thenable<string|undefined> => {
+            // TODO: Consider catching some common errors,
+            //  e.g. (e.code === "ECONNREFUSED") ? "port is closed on hub host or hub is down"
             return hubClient.signIn();
         });
 }
@@ -624,12 +634,11 @@ async function showQuickPick<T>(
 }
 
 /** Try to get the analysis ID from the .prj_files dir. */
-async function getAnalysisFromProjectFile(projectFile: CSProjectFile): Promise<CSAnalysisInfo> {
+async function getAnalysisIdFromProjectFile(projectFile: CSProjectFile): Promise<CSAnalysisId> {
     const analysisIdString: string = await projectFile.readAnalysisIdString();
-    return {
-        id: analysisIdString,
-        name: projectFile.baseName,
-    };
+    // Exploit the fact CSAnalysisId is a string:
+    const analysisId: CSAnalysisId = analysisIdString;
+    return analysisId;
 }
 
 
