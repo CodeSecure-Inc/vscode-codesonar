@@ -1,7 +1,10 @@
 /** Utilities for codesonar integration. */
 
-import { readFile } from 'fs';
+import { readFile } from 'fs/promises';
 import * as path from 'path';
+
+import { PKCSFile } from './pkcs';
+
 
 export const PRJ_DIR_EXT: string = ".prj_files";
 export const PRJ_FILE_EXT: string = ".prj";
@@ -32,26 +35,14 @@ export class CSProjectFile {
     }
 
     /** Read the analysis ID from the project directory. */
-    public readAnalysisIdString(): Promise<string> {
+    public async readAnalysisIdString(): Promise<string> {
         const aidFilePath: string = path.join(this.prjDirPath, AID_FILE_NAME);
-        return new Promise<string>((
-            resolve: (idString: string) => void,
-            reject: (e: unknown) => void,
-        ) => {
-            readFile(
-                aidFilePath,
-                { encoding: "utf-8" },
-                (e: unknown|null, data: string): void => {
-                    if (e) {
-                        reject(e);
-                    } else if (data.length < 1) {
-                        reject(new Error("Empty aid file"));
-                    } else {
-                        resolve(data.trim());
-                    }
-                });   
+        let data: string = await readFile(aidFilePath, { encoding: "utf-8" });
+        data = data.trim();
+        if (data.length < 1) {
+            throw new Error("Empty aid file");
         }
-        );    
+        return data;  
     }
 }
 
@@ -98,5 +89,72 @@ export class CSProjectFile {
 
     public toString(): string {
         return this.hubAddressString;
+    }
+}
+
+
+/** Factory function to create and load a hub key. */
+export async function loadCSHubUserKey(
+    certFilePath: string,
+    keyFilePath: string,
+): Promise<CSHubUserKey> {
+    const userKey: CSHubUserKey = new CSHubUserKey(certFilePath, keyFilePath);
+    await userKey.load();
+    return userKey;
+}
+
+
+/** Encapsulates hubcert/hubkey authentication options. */
+export class CSHubUserKey {
+    public certFilePath: string;
+    public keyFilePath: string;
+    public cert: string|undefined;
+    public key: string|undefined;
+    public keyIsProtected: boolean|undefined;
+
+    constructor(
+        certFilePath: string,
+        keyFilePath: string,
+    ) {
+        this.certFilePath = certFilePath;
+        this.keyFilePath = keyFilePath;
+        this.keyIsProtected = undefined;
+    }
+
+    /** Load certificates by reading files.
+     * 
+     *  It is safe to call this method multiple times.
+     *  Subsequent invocations will not attempt to reload file data.
+    */
+    public async load(): Promise<CSHubUserKey> {
+        const encoding: "utf-8" = "utf-8";
+        if (this.cert === undefined) {
+            this.cert = await readFile(this.certFilePath, { encoding: encoding });
+        }
+        if (this.key === undefined) {
+            this.key = await readFile(this.keyFilePath, { encoding: encoding });
+            this._inspectKey(this.key);
+        }
+
+        return this;
+    }
+
+    _inspectKey(key: string): void {
+        const keyFile: PKCSFile = new PKCSFile();
+        keyFile.parseText(key);
+        for (let item of keyFile.items) {
+            if (item.isPrivate === undefined || item.isProtected === undefined) {
+                throw new Error("Could not determine protection status of hub user key file");
+            }
+            else if (item.isPrivate === true && item.isProtected === true) {
+                this.keyIsProtected = true;
+            }
+            else if (item.isPrivate === true
+                    && item.isProtected === false
+                    && this.keyIsProtected === undefined
+            ) {
+                this.keyIsProtected = false;
+            }
+        }
     }
 }

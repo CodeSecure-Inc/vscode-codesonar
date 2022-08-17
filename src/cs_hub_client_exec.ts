@@ -1,6 +1,9 @@
 /** Test front-end for csHubClient module. */
 import { readFile } from 'fs';
 
+import {
+    CSHubUserKey,
+} from './csonar_ex';
 import { 
     CSHubClient,
     CSHubClientConnectionOptions,
@@ -92,11 +95,11 @@ function main(
         if (userPasswordFilePath) {
             hubOptions.hubpwfile = userPasswordFilePath;
         }
-        if (userCertFilePath) {
-            hubOptions.hubcert = userCertFilePath;
-        }
-        if (userKeyFilePath) {
-            hubOptions.hubkey = userKeyFilePath;
+        if (userCertFilePath || userKeyFilePath) {
+            hubOptions.hubkey = new CSHubUserKey(
+                userCertFilePath ?? userKeyFilePath ?? "",
+                userKeyFilePath ?? userCertFilePath ?? "",
+            );
         }
         const errorHandler: ((e: Error|string) => void) = (e: Error|string) => {
             stderr.write(e.toString() + endl);
