@@ -24,6 +24,7 @@ import {
     findActiveVSWorkspaceFolderPath,
 } from './vscode_ex';
 import {
+    loadCSHubUserKey,
     CSHubAddress,
     CSProjectFile,
 } from './csonar_ex';
@@ -211,7 +212,7 @@ async function executeCodeSonarSarifDownload(
     if (hubAddressObject && hubUserName) {
         passwordStorageKey = formatHubUserPasswordStorageKey(hubAddressObject, hubUserName);
     }
-    if (hubUserCertFilePath) {
+    if (hubAddressString && hubUserCertFilePath) {
         // If cert file path is specified, but key file path is not,
         //  try to guess key file name:
         // This is a feature intended to make it less cumbersome to specify certificate authentication settings.
@@ -234,8 +235,20 @@ async function executeCodeSonarSarifDownload(
         }
         hubUserCertFilePath = resolveFilePath(hubUserCertFilePath);
         hubUserCertKeyFilePath = resolveFilePath(hubUserCertKeyFilePath);
-        hubClientOptions.hubcert = hubUserCertFilePath;
-        hubClientOptions.hubkey = hubUserCertKeyFilePath;
+        hubClientOptions.hubkey = await loadCSHubUserKey(hubUserCertFilePath, hubUserCertKeyFilePath);
+        if (hubClientOptions.hubkey.keyIsProtected) {
+            const captureHubAddressString: string = hubAddressString;
+            const captureHubUserCertFilePath: string = hubUserCertFilePath;
+            const captureHubUserCertKeyFilePath: string = hubUserCertKeyFilePath;
+            hubClientOptions.hubkeypasswd = (): Promise<string> => {
+                return requestHubUserKeyPassphrase(
+                        logger,
+                        captureHubAddressString,
+                        captureHubUserCertFilePath,
+                        captureHubUserCertKeyFilePath,
+                );
+            };
+        }
     }
     else if (hubUserPasswordFilePath) {
         hubUserPasswordFilePath = resolveFilePath(hubUserPasswordFilePath);
@@ -249,42 +262,18 @@ async function executeCodeSonarSarifDownload(
             await secretStorage.delete(passwordStorageKey);
         }
     } else if (hubAddressString && hubUserName && passwordStorageKey) {
-        // Make type-checker happy by providing an unconditional string var:
-        const passwordStorageKeyString: string = passwordStorageKey;
-        const username: string = hubUserName;
-        const address: string = hubAddressString;
-        hubClientOptions.hubpasswd = () => new Promise<string>((resolve, reject) => {
-            secretStorage.get(passwordStorageKeyString).then((password) => {
-                if (password !== undefined) {
-                    logger.info("Found saved password");
-                    resolve(password);
-                }
-                else {
-                    window.showInputBox({
-                        password: true,
-                        prompt: `Enter password for CodeSonar hub user '${username}' at '${address}'`,
-                        placeHolder: 'password',
-                        ignoreFocusOut: true,
-                    }).then(
-                        (inputValue: string|undefined): void => {
-                            if (inputValue === undefined) {
-                                // TODO this error will be caught when we catch signin errors.
-                                //  we should detect and ignore the error in that case.
-                                reject(new Error("User cancelled password input"));
-                            }
-                            else {
-                                secretStorage.store(passwordStorageKeyString, inputValue).then(
-                                    (): void => {
-                                        resolve(inputValue);
-                                    },
-                                    reject,
-                                );
-                            }
-                        },
-                        reject);
-                }
-            });
-        }); 
+        const capturePasswordStorageKey: string = passwordStorageKey;
+        const captureHubAddresString: string = hubAddressString;
+        const captureHubUserName: string = hubUserName;
+        hubClientOptions.hubpasswd = () => {
+            return requestHubUserPassword(
+                    logger,
+                    secretStorage,
+                    capturePasswordStorageKey,
+                    captureHubAddresString,
+                    captureHubUserName,
+                    );
+        };
     }
     let certificateNotTrustedError: Error|undefined;
     if (hubAddressObject !== undefined) {
@@ -495,6 +484,80 @@ async function executeCodeSonarSarifDownload(
             window.showInformationMessage(`Downloaded CodeSonar Analysis to '${destinationFileName}'`);
         }
     }
+}
+
+function requestHubUserKeyPassphrase(
+    logger: Logger,
+    hubAddressString: string,
+    hubUserCertFilePath: string,
+    hubUserCertKeyFilePath: string,
+): Promise<string> {
+    return new Promise<string>((
+        resolve: (password: string) => void,
+        reject: (e: unknown) => void,
+    ) => {
+        window.showInputBox({
+            password: true,
+            prompt: `Enter passphrase for CodeSonar hub key '${hubUserCertKeyFilePath}' at '${hubAddressString}'`,
+            placeHolder: 'passphrase',
+            ignoreFocusOut: true,
+        }).then(
+            (inputValue: string|undefined): void => {
+                if (inputValue === undefined) {
+                    // TODO this error will be caught when we catch signin errors.
+                    //  we should detect and ignore the error in that case.
+                    reject(new Error("User cancelled passphrase input"));
+                }
+                else {
+                    resolve(inputValue);
+                }
+            },
+            reject);            
+    });
+}
+
+function requestHubUserPassword(
+    logger: Logger,
+    secretStorage: SecretStorage,
+    passwordStorageKeyString: string,
+    hubAddressString: string,
+    hubUserName: string,
+): Promise<string> {
+    return new Promise<string>((
+            resolve: (password: string) => void,
+            reject: (e: unknown) => void,
+        ) => {
+        secretStorage.get(passwordStorageKeyString).then((password: string|undefined): void => {
+            if (password !== undefined) {
+                logger.info("Found saved password");
+                resolve(password);
+            }
+            else {
+                window.showInputBox({
+                    password: true,
+                    prompt: `Enter password for CodeSonar hub user '${hubUserName}' at '${hubAddressString}'`,
+                    placeHolder: 'password',
+                    ignoreFocusOut: true,
+                }).then(
+                    (inputValue: string|undefined): void => {
+                        if (inputValue === undefined) {
+                            // TODO this error will be caught when we catch signin errors.
+                            //  we should detect and ignore the error in that case.
+                            reject(new Error("User cancelled password input"));
+                        }
+                        else {
+                            secretStorage.store(passwordStorageKeyString, inputValue).then(
+                                (): void => {
+                                    resolve(inputValue);
+                                },
+                                reject,
+                            );
+                        }
+                    },
+                    reject);
+            }
+        });
+    });
 }
 
 /** Try to sign-in to hub.

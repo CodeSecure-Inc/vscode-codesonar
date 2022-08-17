@@ -1,4 +1,5 @@
 /** An object that facilitates access to a CodeSonar hub. */
+import { strict as assert } from 'node:assert';
 import { readFile } from 'fs/promises';
 import { Readable } from 'stream';
 
@@ -11,13 +12,18 @@ import { Logger } from './logger';
 
 import { 
     encodeURIQuery,
+    HTTP_PROTOCOL,
+    HTTPS_PROTOCOL,
     HTTPClientConnection,
     HTTPClientConnectionOptions,
     HTTPClientRequestOptions,
     HTTPReceivedResponse,
     HTTPStatusError,
 } from './http_client';
-import { CSHubAddress } from './csonar_ex';
+import { 
+    CSHubAddress,
+    CSHubUserKey,
+} from './csonar_ex';
 
 
 const FORM_URLENCODED_CONTENT_TYPE: string = "application/x-www-form-urlencoded";
@@ -55,8 +61,8 @@ export interface CSHubAuthenticationOptions {
     hubuser?: string;
     hubpasswd?: () => Promise<string>;
     hubpwfile?: string;
-    hubcert?: string;
-    hubkey?: string;
+    hubkey?: CSHubUserKey;
+    hubkeypasswd?: () => Promise<string>;
 }
 
 /** Options for creating a connection to a CodeSonar hub.
@@ -245,6 +251,7 @@ export class CSHubClient {
     async getHttpClientConnection(): Promise<HTTPClientConnection> {
         const hubOptions: CSHubClientConnectionOptions = this.options;
         if (this.httpConn === undefined) {
+            let protocol: string|undefined = this.hubAddress.protocol;
             let httpOptions: HTTPClientConnectionOptions = {
                 hostname: this.hubAddress.hostname,
                 port: this.hubAddress.port,
@@ -254,22 +261,30 @@ export class CSHubClient {
             }
             if (hubOptions.cafile) {
                 httpOptions.ca = await readFile(hubOptions.cafile);
+                protocol = HTTPS_PROTOCOL;
             }
-            if (hubOptions.hubcert) {
-                httpOptions.cert = await readFile(hubOptions.hubcert);
+            if (hubOptions.hubkey !== undefined) {
+                await hubOptions.hubkey.load();
+                httpOptions.cert = hubOptions.hubkey.cert;
+                httpOptions.key = hubOptions.hubkey.key;
+                if (hubOptions.hubkeypasswd !== undefined
+                    && hubOptions.hubkey.keyIsProtected
+                ) {
+                    httpOptions.keypasswd = hubOptions.hubkeypasswd;
+                }
+                protocol = HTTPS_PROTOCOL;
             }
-            if (hubOptions.hubkey) {
-                httpOptions.key = await readFile(hubOptions.hubkey);
-            }
-            // TODO get cert-key passphrase
-            let protocol: string|undefined = this.hubAddress.protocol;
             if (protocol === undefined) {
+                // NOTE: if user specified a password-protected hub certificate,
+                //  then we infer that protocol is HTTPS,
+                //  and we should never find ourselves here.
+                assert.strictEqual(httpOptions.keypasswd, undefined);
                 // Hub address did not include the protocol.
                 //  Try to fetch home page over HTTPS first. Fallback to HTTP.
-                // TODO: if we have a cafile, hubcert, or hubkey, then we can assume HTTPS always.
-                protocol = "https";
+                protocol = HTTPS_PROTOCOL;
                 httpOptions.protocol = protocol;
                 const testResource: string = "/";
+                this.log("Testing if hub uses HTTPS...");
                 let httpConn2: HTTPClientConnection = new HTTPClientConnection(httpOptions);
                 try {
                     let resp: HTTPReceivedResponse = await httpConn2.request(testResource, { method: "HEAD" });
@@ -284,7 +299,7 @@ export class CSHubClient {
                     if (resp.status.code === 301) {
                         // MOVED PERMANENTLY
                         // Hub is asking us to redirect, so try HTTP.
-                        protocol = "http";
+                        protocol = HTTP_PROTOCOL;
                     }
                 }
                 catch (e: unknown) {
@@ -298,7 +313,7 @@ export class CSHubClient {
                         //  and we want those errors to be seen by the caller.
                         throw e;
                     }
-                    protocol = "http";
+                    protocol = HTTP_PROTOCOL;
                 }
             }
             httpOptions.protocol = protocol;
@@ -451,42 +466,36 @@ export class CSHubClient {
             reject: (e: any) => void,
         ) => {
             if ((options.auth === undefined || options.auth === "certificate")
-                    && (options.hubcert || options.hubkey)
-                ) {
-                if (options.hubcert && options.hubkey) {
-                    const sif: CSHubSignInForm = {
-                        /* eslint-disable @typescript-eslint/naming-convention */
-                        sif_sign_in: CS_HUB_PARAM_TRUE,
-                        sif_ignore_empty_email: CS_HUB_PARAM_TRUE,
-                        sif_log_out_competitor: CS_HUB_PARAM_TRUE,
-                        response_try_plaintext: CS_HUB_PARAM_TRUE,
-                        sif_use_tls: CS_HUB_PARAM_TRUE,
-                        /* eslint-enable @typescript-eslint/naming-convention */
-                    };
-                    const sifData: string = encodeURIQuery(sif);
-                    this.log("Posting signin data...");
-                    this.post(signInUrlPath, sifData).then((respBody: NodeJS.ReadableStream): void => {
-                        // Ignore response body:
-                        respBody.resume();
-                        resolve(successMessage);
-                    }).catch((e: any): void => {
-                        if ((e instanceof CSHubRequestError)
-                            && e.code !== undefined
-                            && e.code === 403
-                        ) {
-                            // Ordinary signin failure:
-                            resolve(e.message);
-                        } else {
-                            reject(e);
-                        }
-                    });
-                }
-                else if (options.hubcert) {
-                    reject(new Error("Missing hub user certificate private key."));
-                }
-                else {
-                    reject(new Error("Missing hub user certificate."));
-                }
+                && (options.hubkey !== undefined)
+            ) {
+                const sif: CSHubSignInForm = {
+                    /* eslint-disable @typescript-eslint/naming-convention */
+                    sif_sign_in: CS_HUB_PARAM_TRUE,
+                    sif_ignore_empty_email: CS_HUB_PARAM_TRUE,
+                    sif_log_out_competitor: CS_HUB_PARAM_TRUE,
+                    response_try_plaintext: CS_HUB_PARAM_TRUE,
+                    sif_use_tls: CS_HUB_PARAM_TRUE,
+                    /* eslint-enable @typescript-eslint/naming-convention */
+                };
+                const sifData: string = encodeURIQuery(sif);
+                this.log("Posting signin data...");
+                // The hubcert and hubkey will be implicitly passed to the server in this POST method
+                //  since they came from 'this.options'.
+                this.post(signInUrlPath, sifData).then((respBody: NodeJS.ReadableStream): void => {
+                    // Ignore response body:
+                    respBody.resume();
+                    resolve(successMessage);
+                }).catch((e: any): void => {
+                    if ((e instanceof CSHubRequestError)
+                        && e.code !== undefined
+                        && e.code === 403
+                    ) {
+                        // Ordinary signin failure:
+                        resolve(e.message);
+                    } else {
+                        reject(e);
+                    }
+                });
             }
             else if ((options.auth === undefined || options.auth === "password")
                     && options.hubuser) {

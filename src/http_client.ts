@@ -32,6 +32,7 @@ export interface HTTPClientConnectionOptions {
     ca?: string|Buffer;    // ca file contents; not a file path.
     cert?: string|Buffer;  // client cert file contents.
     key?: string|Buffer;   // client cert key file contents.
+    keypasswd?: () => Promise<string>;   // passphrase for client cert key.
 }
 
 export interface HTTPClientRequestOptions {
@@ -64,6 +65,7 @@ interface HTTPSRequestOptions extends HTTPRequestOptions {
     ca?: string|Buffer;
     cert?: string|Buffer;
     key?: string|Buffer;
+    passphrase?: string;
 }
 
 /** Represents an HTTP Status as a JavaScript Error object. */
@@ -251,6 +253,12 @@ export class HTTPClientConnection {
     private readonly clientCertKey: string|Buffer|undefined;
     private readonly httpCookies: Record<string, HTTPCookie>;
 
+    private _requestPassphrase: undefined | (() => Promise<string>);
+    // It would be best not to keep the passphrase stored in a variable,
+    //  but the https.request() method will need it everytime it is called.
+    //  We will request the password one time, then we will remember it.
+    private _passphrase: string|undefined;
+
     public logger: Logger|undefined;
 
     constructor(options: HTTPClientConnectionOptions|URL|string) {
@@ -301,6 +309,7 @@ export class HTTPClientConnection {
         this.ca = options2.ca;
         this.clientCert = options2.cert;
         this.clientCertKey = options2.key;
+        this._requestPassphrase = options2.keypasswd;
         // TODO consider using incoming URL.pathname as the "base" for outgoing requests.
     }
 
@@ -434,6 +443,15 @@ export class HTTPClientConnection {
         }
         if (this.clientCertKey) {
             httpsOptions.key = this.clientCertKey;
+        }
+        if (this._requestPassphrase !== undefined) {
+            this.log("Requesting passphrase for client certificate key...");
+            this._passphrase = await this._requestPassphrase();
+            // Only request passphrase one time:
+            this._requestPassphrase = undefined;
+        }
+        if (this._passphrase !== undefined) {
+            httpsOptions.passphrase = this._passphrase;
         }
         return new Promise<HTTPReceivedResponse>((
                 resolve: (response: HTTPReceivedResponse) => void,
