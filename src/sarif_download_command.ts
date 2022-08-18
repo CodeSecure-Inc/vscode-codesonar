@@ -393,9 +393,9 @@ async function executeCodeSonarSarifDownload(
         let targetAnalysisInfoArray: CSAnalysisInfo[] = analysisInfoArray;
         if (baseAnalysisInfo !== undefined) {
             targetAnalysisInfoArray = [];
-            for (analysisInfo of analysisInfoArray) {
-                if (analysisInfo.id !== baseAnalysisInfo.id) {
-                    targetAnalysisInfoArray.push(analysisInfo);
+            for (let analysisInfo2 of analysisInfoArray) {
+                if (analysisInfo2.id !== baseAnalysisInfo.id) {
+                    targetAnalysisInfoArray.push(analysisInfo2);
                 }
             }
         }
@@ -513,7 +513,7 @@ async function verifyHubCompatibility(
         && versionCompatibilityInfo.clientOK === false
     ) {
         // The hub recognized our protocol version and it rejected us:
-        throw new Error("This CodeSonar extension is too old to communicate with your hub.  Please upgrade if possible.");
+        throw new Error("This CodeSonar extension is too old to communicate with your hub.  Please upgrade the extension.");
     }
     return versionCompatibilityInfo;
 }
