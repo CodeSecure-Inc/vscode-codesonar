@@ -21,18 +21,19 @@ CodeSonar hub authentication information and other preferences are managed in th
 
 ## Requirements
 
-The "Sarif Viewer" VS Code extension from Microsoft.
+* The "Sarif Viewer" VS Code extension from Microsoft.
+* Access to a CodeSonar hub running CodeSonar 7.1 or later.
 
 ## Extension Settings
 
-None
+Many "CodeSonar" extension settings are provided in order to customize hub communication and to facilitate CodeSonar analysis from a VS Code task.
 
 ## Known Issues
 
-Pre-release version.
+None
 
 ## Release Notes
 
-### 0.9.0
+### 1.0.0
 
-Beta/pre-release.  For demonstration and evaluation only.
+Initial release.  Compatible with CodeSonar 7.1.
