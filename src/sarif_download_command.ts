@@ -38,6 +38,7 @@ import {
     CSAnalysisId,
     CSAnalysisInfo,
     CSHubSarifSearchOptions,
+    CSHubVersionCompatibilityInfo,
 } from './cs_hub_client';
 import * as sarifView from './sarif_viewer';
 
@@ -95,6 +96,7 @@ async function executeCodeSonarSarifDownload(
     };
     const projectConfig: csConfig.CSProjectConfig|undefined = await csConfigIO.readCSProjectConfig();
     const extensionOptions: csConfig.CSExtensionOptions = await csConfigIO.readCSEXtensionOptions();
+    const extensionVersionInfo: csConfig.ExtensionVersionInfo = csConfigIO.extensionVersionInfo;
     let projectPath: string|undefined;
     let projectId: CSProjectId|undefined;
     let baseAnalysisName: string|undefined;
@@ -276,9 +278,18 @@ async function executeCodeSonarSarifDownload(
         };
     }
     let certificateNotTrustedError: Error|undefined;
+    let hubCompatibilityInfo: CSHubVersionCompatibilityInfo|undefined;
     if (hubAddressObject !== undefined) {
         hubClient = new CSHubClient(hubAddressObject, hubClientOptions);
         hubClient.logger = logger;
+        hubCompatibilityInfo = await verifyHubCompatibility(hubClient, extensionVersionInfo);
+        if (hubCompatibilityInfo === undefined
+            && withAnalysisBaseline
+        ) {
+            // No compatibility info means hub is older than CodeSonar 7.1,
+            //  which also means hub is too old to support SARIF difference search:
+            throw new Error("CodeSonar hub version 7.1 or later is required for SARIF analysis comparison.");
+        }
         let signInSucceeded: boolean = false;
         try {
             const signInErrorMessage: string|undefined = await verifyHubCredentials(hubClient);
@@ -484,6 +495,27 @@ async function executeCodeSonarSarifDownload(
             window.showInformationMessage(`Downloaded CodeSonar Analysis to '${destinationFileName}'`);
         }
     }
+}
+
+/** Get compatibility information from hub.  Throw an error if the extension is too old for the hub. */
+async function verifyHubCompatibility(
+    hubClient: CSHubClient,
+    extensionVersionInfo: csConfig.ExtensionVersionInfo,
+): Promise<CSHubVersionCompatibilityInfo|undefined> {
+    const hubClientName: string = extensionVersionInfo.hubClientName;
+    const hubClientVersion: string = extensionVersionInfo.hubProtocolNumber.toString();
+    const versionCompatibilityInfo: CSHubVersionCompatibilityInfo|undefined =
+        await hubClient.fetchVersionCompatibilityInfo(
+                hubClientName,
+                hubClientVersion,
+            );
+    if (versionCompatibilityInfo !== undefined
+        && versionCompatibilityInfo.clientOK === false
+    ) {
+        // The hub recognized our protocol version and it rejected us:
+        throw new Error("This CodeSonar extension is too old to communicate with your hub.  Please upgrade if possible.");
+    }
+    return versionCompatibilityInfo;
 }
 
 function requestHubUserKeyPassphrase(

@@ -5,6 +5,11 @@ import { Readable } from 'stream';
 
 import { Logger } from './logger';
 
+export const HTTP_OK: number = 200;
+export const HTTP_MOVED_PERMANENTLY: number = 301;
+export const HTTP_FORBIDDEN: number = 403;
+export const HTTP_NOT_FOUND: number = 404;
+
 export const HTTP_PROTOCOL: "http" = "http";
 export const HTTPS_PROTOCOL: "https" = "https";
 
@@ -484,7 +489,7 @@ export class HTTPClientConnection {
                 );
                 let rejectError: Error|undefined;
                 let redirectPromise: Promise<void>|undefined;
-                if (httpStatus.code === 301) {
+                if (httpStatus.code === HTTP_MOVED_PERMANENTLY) {
                     // We cannot redirect from this connection, even if it is just to switch protocol.
                     const redirectTargetUrlString: string|undefined = res.headers["location"];
                     let redirectTargetUrl: URL|undefined;
@@ -495,7 +500,7 @@ export class HTTPClientConnection {
                         rejectError = new Error(`Missing Redirect Location from server at ${targetUrl.href}`);
                     }
                     else if (redirectTargetUrl.origin !== this.baseUrlString) {
-                        // In this case, we will resolve (not reject) a 301 response.
+                        // In this case, we will resolve (not reject) a HTTP_MOVED_PERMANENTLY 301 response.
                         this.log(`Cannot redirect to '${redirectTargetUrl.href}' since it is not from origin '${this.baseUrlString}'.`);
                     }
                     else {
