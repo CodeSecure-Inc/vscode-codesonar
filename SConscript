@@ -113,16 +113,25 @@ cso_vscode_deps += [File(x) for x in [
     'tsconfig.json',
     '.vscodeignore',
 ]]
-cso_vscode_deps = sorted(cso_vscode_deps)
+cso_vscode_deps = sorted(cso_vscode_deps, key=(lambda f: str(f)))
 
-cso_vscode_project_source = env.GTFindFiles('src')
+cso_vscode_project_src_dir = Dir('src')
+cso_vscode_project_source = cso_vscode_project_src_dir.glob('*.ts')
 cso_vscode_project_source += extension_version_ts
 cso_vscode_project_source += [File(x) for x in [
-    "README.md",
-    "CHANGELOG.md",
-    "LICENSE.txt",
+    'README.md',
+    'CHANGELOG.md',
+    'LICENSE.txt',
 ]]
-cso_vscode_project_source = sorted(cso_vscode_project_source)
+# extension_version.ts is generated, but it may already exist in the src dir.
+#  Use a dictionary to remove duplicates, and sort to avoid scons -q complaints:
+cso_vscode_project_source_dict = { f.get_abspath():f for f in cso_vscode_project_source}
+# Sort using key, which is absolute file path string, but make a list out of file object values:
+cso_vscode_project_source = [item[1] 
+    for item in sorted(cso_vscode_project_source_dict.items(),
+                       key=(lambda item: item[0]))
+    ]
+
 
 csonar_vscode_extension_vsix_fname = f'{csonar_vscode_pkg_name}-{csonar_vscode_version_str}{VSIX_EXT}'
 
