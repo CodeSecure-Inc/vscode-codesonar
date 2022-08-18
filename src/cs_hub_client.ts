@@ -12,6 +12,9 @@ import { Logger } from './logger';
 
 import { 
     encodeURIQuery,
+    HTTP_OK,
+    HTTP_FORBIDDEN,
+    HTTP_NOT_FOUND,
     HTTP_PROTOCOL,
     HTTPS_PROTOCOL,
     HTTPClientConnection,
@@ -100,6 +103,14 @@ interface CSHubSignInForm {
     sif_password?: string;
     sif_use_tls?: CSHubSignInFormBoolean;
     /* eslint-enable @typescript-eslint/naming-convention */
+}
+
+/** Response from '/command/client_version/$client/' */
+export interface CSHubVersionCompatibilityInfo {
+    hubVersion: string,
+    hubVersionNumber: number,
+    hubProtocol: number,
+    clientOK?: boolean|null,
 }
 
 /** Defines the generic result of a Hub API search. */
@@ -428,7 +439,7 @@ export class CSHubClient {
         // To avoid this, we must ensure Content-Length header is set.
         // We assume that the httpConn.request() method will do this for us:
         const resp: HTTPReceivedResponse = await httpConn.request(resourceUrl, httpOptions, data);
-        if (resp.status.code !== 200) {
+        if (resp.status.code !== HTTP_OK) {
             this.log(`HTTP Status: ${resp.status}`);
             const hubError: Error = await this.createHubRequestError(resp, responseIsErrorMessage);
             throw hubError;
@@ -488,7 +499,7 @@ export class CSHubClient {
                 }).catch((e: any): void => {
                     if ((e instanceof CSHubRequestError)
                         && e.code !== undefined
-                        && e.code === 403
+                        && e.code === HTTP_FORBIDDEN
                     ) {
                         // Ordinary signin failure:
                         resolve(e.message);
@@ -532,7 +543,7 @@ export class CSHubClient {
                     }).catch((e: any): void => {
                         if ((e instanceof CSHubRequestError)
                                 && e.code !== undefined
-                                && e.code === 403) {
+                                && e.code === HTTP_FORBIDDEN) {
                             resolve(e.message);
                         } else {
                             reject(e);
@@ -565,7 +576,7 @@ export class CSHubClient {
                         this.log(`Fetching resource ${resource}`);
                         return httpConn.request(resource);
                 }).then((resp: HTTPReceivedResponse): void => {
-                    if (resp.status.code === 200) {
+                    if (resp.status.code === HTTP_OK) {
                         this.log("Received OK response");
                         resolve(resp.body);
                     }
@@ -588,6 +599,36 @@ export class CSHubClient {
         return this.parseResponseJson(resIO);
     }
 
+    /** Try to fetch hub and client version compatibility information.
+     * 
+     *  @returns version compatibility information if available.
+     *   CodeSonar hubs prior to v7.1 do not provide this information
+    */
+    public async fetchVersionCompatibilityInfo(
+        clientName: string,
+        clientVersion: string,
+    ): Promise<CSHubVersionCompatibilityInfo|undefined> {
+        const versionCheckResource: string = `/command/check_version/${encodeURIComponent(clientName)}/?version=${encodeURIComponent(clientVersion)}`;
+        let respResult: CSHubVersionCompatibilityInfo|undefined;
+        try {
+            const respJson: unknown = await this.fetchJson(versionCheckResource);
+            respResult = respJson as CSHubVersionCompatibilityInfo;
+        }
+        catch (e: unknown) {
+            if (e instanceof HTTPStatusError
+                && e.code === HTTP_NOT_FOUND
+            ) {
+                // check_version URL was added in CodeSonar 7.1,
+                //  assume this is an old hub that does not support this URL.
+            }
+            else {
+                throw e;
+            }
+        }
+        return respResult;
+    }
+
+    /** Fetch a list of analysis projects. */
     public async fetchProjectInfo(searchProjectPath?: string): Promise<CSProjectInfo[]> {
         const prjGridParams: string = "[project id.sort:asc][project id.visible:1][path.visible:1]";
         let projectSearchPath: string = "/project_search.json";
@@ -631,9 +672,10 @@ export class CSHubClient {
         return projectInfoArray;
     }
 
-    public async fetchAnalysisInfo(analysisId: CSAnalysisId): Promise<CSAnalysisInfo[]> {
+    /** Fetch a list of analyses for a project. */
+    public async fetchAnalysisInfo(projectId: CSProjectId): Promise<CSAnalysisInfo[]> {
         const analysisTableSpec: string = encodeURIComponent("[analysis id.sort:desc]");
-        const analysisListPath: string = `/project/${encodeURIComponent(analysisId)}.json?${RESPONSE_TRY_PLAINTEXT}=${CS_HUB_PARAM_TRUE}&anlgrid=${analysisTableSpec}`;
+        const analysisListPath: string = `/project/${encodeURIComponent(projectId)}.json?${RESPONSE_TRY_PLAINTEXT}=${CS_HUB_PARAM_TRUE}&anlgrid=${analysisTableSpec}`;
         const respJson: unknown = await this.fetchJson(analysisListPath);
         const respResults: CSHubApiSearchResults<CSHubAnalysisRow> = respJson as CSHubApiSearchResults<CSHubAnalysisRow>;
         let analysisInfoArray: CSAnalysisInfo[] = [];

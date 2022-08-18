@@ -3,6 +3,6 @@ dist
 node_modules
 /package.json
 /package-lock.json
+/src/extension_version.ts
 .vscode-test/
 *.vsix
-

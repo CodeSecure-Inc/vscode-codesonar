@@ -19,6 +19,7 @@
     "ignorePatterns": [
         "out",
         "dist",
+        "extension_version.ts.in",
         "**/*.d.ts"
     ]
 }

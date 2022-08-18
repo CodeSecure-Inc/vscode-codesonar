@@ -11,6 +11,13 @@ import { findVSConfigFilePath, findVSConfigFolderPath } from './vscode_ex';
 
 import { CSHubAddress } from './csonar_ex';
 
+import {
+    CSONAR_VSCODE_VERSION_STRING,
+    CSONAR_VSCODE_PROTOCOL_NUMBER,
+} from './extension_version';
+
+
+const CSHUB_CLIENT_NAME: string = "vscode";
 
 const CONFIG_SECTION: string = "codesonar";
 const CONFIG_HUB_ADDR: string = "hubAddress";
@@ -31,6 +38,12 @@ const SARIF_WHITESPACE_FORMAT_COMPACT: string = "compact";
 
 const SARIF_INDENT_LENGTH: number = 2;
 const SARIF_NO_INDENT_LENGTH: number = -1;
+
+export interface ExtensionVersionInfo {
+    versionString: string;
+    hubProtocolNumber: number;
+    hubClientName: string;
+}
 
 type CSHubAuthMode = "anonymous" | "password" | "certificate";
 
@@ -88,6 +101,7 @@ export function formatHubUserPasswordStorageKey(hubAddress: CSHubAddress, hubUse
 /** Provides access to CodeSonar extension configuration settings. */
 export class CSConfigIO {
     private wsConfig: WorkspaceConfiguration;
+    public readonly extensionVersionInfo: ExtensionVersionInfo;
     public readonly defaultHubAddressString: string = "localhost:7340";
     /** A non-empty string that represents the hub's anonymous user. */
     public readonly anonymousUserName: string;
@@ -95,6 +109,11 @@ export class CSConfigIO {
     constructor() {
         this.anonymousUserName = "Anonymous";
         this.wsConfig = workspace.getConfiguration(CONFIG_SECTION);
+        this.extensionVersionInfo = {
+            versionString: CSONAR_VSCODE_VERSION_STRING,
+            hubProtocolNumber: CSONAR_VSCODE_PROTOCOL_NUMBER,
+            hubClientName: CSHUB_CLIENT_NAME,
+        };
     }
 
     /** Save hub address to config store. */

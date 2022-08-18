@@ -1,0 +1,4 @@
+/** Defines version number for CodeSonar extension for VS Code. */
+
+export const CSONAR_VSCODE_VERSION_STRING: string = "__CSONAR_VSCODE_VERSION__";
+export const CSONAR_VSCODE_PROTOCOL_NUMBER: number = __CSONAR_VSCODE_PROTOCOL_NUMBER__;
