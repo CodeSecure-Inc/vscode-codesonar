@@ -107,31 +107,32 @@ interface CSHubSignInForm {
 
 /** Response from '/command/client_version/$client/' */
 export interface CSHubVersionCompatibilityInfo {
-    hubVersion: string,
-    hubVersionNumber: number,
-    hubProtocol: number,
-    clientOK?: boolean|null,
+    hubVersion: string;
+    hubVersionNumber: number;
+    hubProtocol: number;
+    clientOK?: boolean|null;
+    message?: string;
 }
 
 /** Defines the generic result of a Hub API search. */
 interface CSHubApiSearchResults<T> {
-    rows?: Array<T>
+    rows?: Array<T>;
 }
 
 /** Defines a subset of project_search JSON row. */
 interface CSHubProjectRow {
     /* eslint-disable @typescript-eslint/naming-convention */
-    "Project ID"?: number,
-    "Project"?: string,
-    "Path"?: string,
+    "Project ID"?: number;
+    "Project"?: string;
+    "Path"?: string;
     /* eslint-enable @typescript-eslint/naming-convention */
 }
 
 /** Defines a subset of analysis JSON row from project endpoint. */
 interface CSHubAnalysisRow {
     /* eslint-disable @typescript-eslint/naming-convention */
-    "Analysis"?: string,
-    "url"?: string,
+    "Analysis"?: string;
+    "url"?: string;
     /* eslint-enable @typescript-eslint/naming-convention */
 }
 
