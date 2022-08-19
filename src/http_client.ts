@@ -3,6 +3,7 @@ import * as http from 'http';
 import * as https from 'https';
 import { Readable } from 'stream';
 
+import { CancellationSignal } from './common_utils';
 import { Logger } from './logger';
 
 export const HTTP_OK: number = 200;
@@ -29,6 +30,13 @@ const URL_HASH_SEP: string = "#";
 
 export type HTTPProtocol = "http" | "https";
 
+/** Interface for objects that can signal an HTTP request cancellation. */
+export interface HTTPCancellationSignal extends CancellationSignal {
+    // Export a custom cancellation signal which simply implements CancellationSignal:
+    //  the intention here is not to directly declare a dependency on common_utils.ts.
+}
+
+/** Per-connection options. */
 export interface HTTPClientConnectionOptions {
     hostname: string;
     port?: number|string;  // allow string since URL.port is a string.
@@ -40,12 +48,16 @@ export interface HTTPClientConnectionOptions {
     keypasswd?: () => Promise<string>;   // passphrase for client cert key.
 }
 
+/** Per-request options */
 export interface HTTPClientRequestOptions {
     method?: string;
     headers?: Record<string,string>;
     timeout?: number;
+    dataEncoding?: BufferEncoding;
+    cancellationSignal?: HTTPCancellationSignal;
 }
 
+/** Response received by client from an HTTP request. */
 export interface HTTPReceivedResponse {
     url: URL;
     body: Readable;
@@ -395,10 +407,11 @@ export class HTTPClientConnection {
             resource: string|URL, 
             options?: HTTPClientRequestOptions,
             data?: string|Buffer,
-            dataEncoding: BufferEncoding = 'utf8',
             ) : Promise<HTTPReceivedResponse> {
         const defaultMethod: string = "GET";
         const targetUrl: URL = this.resourceURL(resource);
+        let dataEncoding: BufferEncoding = 'utf8';
+        let cancellationSignal: HTTPCancellationSignal|undefined;
         let httpOptions: HTTPRequestOptions = urlToHttpOptions(targetUrl);
         httpOptions.method = defaultMethod;
         httpOptions.timeout = this.timeout;
@@ -414,6 +427,12 @@ export class HTTPClientConnection {
             }
             if (options.headers) {
                 httpOptions.headers = options.headers;
+            }
+            if (options.dataEncoding) {
+                dataEncoding = options.dataEncoding;
+            }
+            if (options.cancellationSignal !== undefined) {
+                cancellationSignal = options.cancellationSignal;
             }
         }
         if (cookies.length) {
@@ -506,7 +525,11 @@ export class HTTPClientConnection {
                     else {
                         // Recursive call to request the redirect location:
                         this.log(`HTTP Redirect to: ${redirectTargetUrlString}`);
-                        redirectPromise = this.request(redirectTargetUrl, options).then(resolve).catch(reject);
+                        redirectPromise = this.request(
+                                redirectTargetUrl,
+                                options,
+                                data,
+                                ).then(resolve).catch(reject);
                     }
                 }
                 // else resolve a non-301 response, could be 200, but could be anything else.
@@ -535,9 +558,33 @@ export class HTTPClientConnection {
                 reject(new Error("Could not create HTTP request."));
             }
             else {
-                requestObject.on('error', reject);
+                const capturedRequestObject: http.ClientRequest = requestObject;
+                let unregisterCancellation: undefined|(()=>void);
+                if (cancellationSignal !== undefined) {
+                    unregisterCancellation = cancellationSignal.onCancellationRequested((): void => {
+                        this.log("HTTP request was canceled.");
+                        capturedRequestObject.destroy();
+                    });
+                }
+                requestObject.on('timeout', (): void => {
+                    capturedRequestObject.destroy();
+                });
+                requestObject.on('error', (e: unknown) => {
+                    if (cancellationSignal !== undefined && cancellationSignal.isCancellationRequested) {
+                        const e2: Error = cancellationSignal.createCancellationError();
+                        reject(e2);
+                    }
+                    else {
+                        reject(e);
+                    }
+                });
+                requestObject.on('close', () => {
+                    if (unregisterCancellation !== undefined) {
+                        unregisterCancellation();
+                    }
+                });
                 if (dataBuffer !== undefined) {
-                    requestObject.write(dataBuffer);
+                    capturedRequestObject.write(dataBuffer);
                 }
                 requestObject.end();
             } 

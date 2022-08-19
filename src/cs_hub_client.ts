@@ -7,12 +7,14 @@ import {
     asErrnoException,
     errorToString,
     readTextStream,
+    CancellationSignal,
 } from './common_utils';
 import { Logger } from './logger';
 
 import { 
     encodeURIQuery,
     HTTP_OK,
+    HTTP_MOVED_PERMANENTLY,
     HTTP_FORBIDDEN,
     HTTP_NOT_FOUND,
     HTTP_PROTOCOL,
@@ -28,6 +30,8 @@ import {
     CSHubUserKey,
 } from './csonar_ex';
 
+
+const EPROTO_CODE: string = 'EPROTO';
 
 const FORM_URLENCODED_CONTENT_TYPE: string = "application/x-www-form-urlencoded";
 
@@ -78,8 +82,13 @@ export interface CSHubClientConnectionOptions extends CSHubAuthenticationOptions
     timeout?: number;
 }
 
+/** Per-request options. */
+export interface CSHubClientRequestOptions {
+    cancellationSignal?: CancellationSignal;
+}
+
 /** Options for warning search in SARIF format. */
-export interface CSHubSarifSearchOptions {
+export interface CSHubSarifSearchOptions extends CSHubClientRequestOptions {
     warningFilter?: string;
     indentLength?: number;
     artifactListing?: boolean;
@@ -260,7 +269,7 @@ export class CSHubClient {
     }
 
     /** Get the underlying HTTP connection object.  Test for secure protocol if necessary. */
-    async getHttpClientConnection(): Promise<HTTPClientConnection> {
+    async getHttpClientConnection(options?: CSHubClientRequestOptions): Promise<HTTPClientConnection> {
         const hubOptions: CSHubClientConnectionOptions = this.options;
         if (this.httpConn === undefined) {
             let protocol: string|undefined = this.hubAddress.protocol;
@@ -295,11 +304,17 @@ export class CSHubClient {
                 //  Try to fetch home page over HTTPS first. Fallback to HTTP.
                 protocol = HTTPS_PROTOCOL;
                 httpOptions.protocol = protocol;
+                const requestOptions: HTTPClientRequestOptions = {
+                        method: "HEAD",
+                    };
+                if (options !== undefined && options.cancellationSignal !== undefined) {
+                    requestOptions.cancellationSignal = options.cancellationSignal;
+                }
                 const testResource: string = "/";
                 this.log("Testing if hub uses HTTPS...");
                 let httpConn2: HTTPClientConnection = new HTTPClientConnection(httpOptions);
                 try {
-                    let resp: HTTPReceivedResponse = await httpConn2.request(testResource, { method: "HEAD" });
+                    let resp: HTTPReceivedResponse = await httpConn2.request(testResource, requestOptions);
                     await new Promise<void>((
                             resolve: () => void,
                             reject: (e: any) => void,
@@ -308,7 +323,7 @@ export class CSHubClient {
                         resp.body.on('error', reject);
                         resp.body.resume();
                     });
-                    if (resp.status.code === 301) {
+                    if (resp.status.code === HTTP_MOVED_PERMANENTLY) {
                         // MOVED PERMANENTLY
                         // Hub is asking us to redirect, so try HTTP.
                         protocol = HTTP_PROTOCOL;
@@ -319,7 +334,7 @@ export class CSHubClient {
                     const ex: NodeJS.ErrnoException|undefined = asErrnoException(e);
                     const code: string = ex?.code ?? '';
                     // EPROTO error occurs if we try to speak in HTTPS to an HTTP hub:
-                    if (code !== 'EPROTO') {
+                    if (code !== EPROTO_CODE) {
                         // Many other legitimate connection errors could occur,
                         //  such as 'DEPTH_ZERO_SELF_SIGNED_CERT',
                         //  and we want those errors to be seen by the caller.
@@ -396,15 +411,27 @@ export class CSHubClient {
         });
     }
 
+    private toHTTPClientRequestOptions(options?: CSHubClientRequestOptions): HTTPClientRequestOptions|undefined {
+        let httpOptions: HTTPClientRequestOptions|undefined;
+        if (options !== undefined) {
+            httpOptions = {};
+            if (options.cancellationSignal !== undefined) {
+                httpOptions.cancellationSignal = options.cancellationSignal;
+            }
+        }
+
+        return httpOptions;
+    }
+
     /** Post raw data to the hub. */
     private async post(
         resource: string,
         data: string,
-        options?: HTTPClientRequestOptions,
+        httpOptions?: HTTPClientRequestOptions,
         contentType: string = FORM_URLENCODED_CONTENT_TYPE,
     ): Promise<Readable> {
         const httpConn: HTTPClientConnection = await this.getHttpClientConnection();
-        const httpOptions: HTTPClientRequestOptions = { 
+        const httpOptions2: HTTPClientRequestOptions = { 
             method: "POST",
             headers: {
                 /* eslint-disable @typescript-eslint/naming-convention */
@@ -413,16 +440,16 @@ export class CSHubClient {
                 /* eslint-enable @typescript-eslint/naming-convention */
             },
         };
-        if (options) {
-            if (options.headers !== undefined
-                && httpOptions.headers !== undefined  // needed for typechecker only
+        if (httpOptions) {
+            if (httpOptions.headers !== undefined
+                && httpOptions2.headers !== undefined  // needed for typechecker only
             ) {
-                for (let headerName of Object.keys(options.headers)) {
-                    httpOptions.headers[headerName] = options.headers[headerName];
+                for (let headerName of Object.keys(httpOptions.headers)) {
+                    httpOptions2.headers[headerName] = httpOptions.headers[headerName];
                 }
             }
-            if (options.timeout) {
-                httpOptions.timeout = options.timeout;
+            if (httpOptions.timeout) {
+                httpOptions2.timeout = httpOptions.timeout;
             }
         }
         const resourceUrl: URL = httpConn.resourceURL(resource);
@@ -439,7 +466,7 @@ export class CSHubClient {
         // The hub will return HTTP 501 if Transfer-Encoding header is set.
         // To avoid this, we must ensure Content-Length header is set.
         // We assume that the httpConn.request() method will do this for us:
-        const resp: HTTPReceivedResponse = await httpConn.request(resourceUrl, httpOptions, data);
+        const resp: HTTPReceivedResponse = await httpConn.request(resourceUrl, httpOptions2, data);
         if (resp.status.code !== HTTP_OK) {
             this.log(`HTTP Status: ${resp.status}`);
             const hubError: Error = await this.createHubRequestError(resp, responseIsErrorMessage);
@@ -464,7 +491,7 @@ export class CSHubClient {
      * @returns {Promise<string|undefined>}  Promise resolving to undefined if sign-in succeeded
      *     or sign-in failure message string if credentials were rejected.
      */
-    public signIn(): Promise<string|undefined> {
+    public signIn(options?: CSHubClientRequestOptions): Promise<string|undefined> {
         // Send sign-in POST request to a page that produces a short response:
         const successMessage: string|undefined = undefined;
         // response_try_plaintext must be in URL, or it won't work.
@@ -472,13 +499,14 @@ export class CSHubClient {
         //   but that doesn't seem to work.
         //  We will do both just to be safe.
         const signInUrlPath: string = `/?${RESPONSE_TRY_PLAINTEXT}=${CS_HUB_PARAM_TRUE}`;
-        const options: CSHubClientConnectionOptions = this.options;
+        const connOptions: CSHubClientConnectionOptions = this.options;
+        const httpOptions: HTTPClientRequestOptions|undefined = this.toHTTPClientRequestOptions(options);
         return new Promise<string|undefined>((
             resolve: (e: string|undefined) => void,
             reject: (e: any) => void,
         ) => {
-            if ((options.auth === undefined || options.auth === "certificate")
-                && (options.hubkey !== undefined)
+            if ((connOptions.auth === undefined || connOptions.auth === "certificate")
+                && (connOptions.hubkey !== undefined)
             ) {
                 const sif: CSHubSignInForm = {
                     /* eslint-disable @typescript-eslint/naming-convention */
@@ -493,7 +521,11 @@ export class CSHubClient {
                 this.log("Posting signin data...");
                 // The hubcert and hubkey will be implicitly passed to the server in this POST method
                 //  since they came from 'this.options'.
-                this.post(signInUrlPath, sifData).then((respBody: NodeJS.ReadableStream): void => {
+                this.post(
+                    signInUrlPath,
+                    sifData,
+                    httpOptions,
+                ).then((respBody: NodeJS.ReadableStream): void => {
                     // Ignore response body:
                     respBody.resume();
                     resolve(successMessage);
@@ -509,14 +541,14 @@ export class CSHubClient {
                     }
                 });
             }
-            else if ((options.auth === undefined || options.auth === "password")
-                    && options.hubuser) {
+            else if ((connOptions.auth === undefined || connOptions.auth === "password")
+                    && connOptions.hubuser) {
                 let passwordPromise: Promise<string>|undefined; 
-                if (options.hubpasswd) {
-                    passwordPromise = options.hubpasswd();
+                if (connOptions.hubpasswd) {
+                    passwordPromise = connOptions.hubpasswd();
                 }
-                else if (options.hubpwfile) {
-                    passwordPromise = readFile(options.hubpwfile, {encoding:"utf-8"}).then(
+                else if (connOptions.hubpwfile) {
+                    passwordPromise = readFile(connOptions.hubpwfile, {encoding:"utf-8"}).then(
                             fileContent => fileContent.trim());
                 }
                 if (passwordPromise === undefined) {
@@ -529,13 +561,13 @@ export class CSHubClient {
                             sif_ignore_empty_email: CS_HUB_PARAM_TRUE,
                             sif_log_out_competitor: CS_HUB_PARAM_TRUE,
                             response_try_plaintext: CS_HUB_PARAM_TRUE,
-                            sif_username: options.hubuser,
+                            sif_username: connOptions.hubuser,
                             sif_password: password,
                             /* eslint-enable @typescript-eslint/naming-convention */
                         };
                         const sifData: string = encodeURIQuery(sif);
                         this.log("Posting signin data...");
-                        return this.post(signInUrlPath, sifData);
+                        return this.post(signInUrlPath, sifData, httpOptions);
                     }).then(
                         (respBody: NodeJS.ReadableStream): void => {
                             // Ignore response body:
@@ -552,9 +584,9 @@ export class CSHubClient {
                     });
                 }
             }
-            else if (options.auth === undefined || options.auth === "anonymous") {
+            else if (connOptions.auth === undefined || connOptions.auth === "anonymous") {
                 // Simply drop existing sign-in cookie
-                this.getHttpClientConnection().then(
+                this.getHttpClientConnection(options).then(
                     (httpConn: HTTPClientConnection): void => {
                         this.clearSignInCookies(httpConn);
                         resolve(successMessage);
@@ -567,15 +599,19 @@ export class CSHubClient {
     }
 
     /** Fetch a raw resource from the hub. */
-    public fetch(resource: string): Promise<Readable> {
+    public fetch(
+        resource: string,
+        options?: CSHubClientRequestOptions,
+    ): Promise<Readable> {
+        const httpOptions: HTTPClientRequestOptions|undefined = this.toHTTPClientRequestOptions(options);
         return new Promise<Readable>((
                 resolve: (resIO: Readable) => void,
                 reject: (e: unknown) => void,
             ) => {
-                this.getHttpClientConnection().then(
+                this.getHttpClientConnection(options).then(
                     (httpConn: HTTPClientConnection): Promise<HTTPReceivedResponse> => {
                         this.log(`Fetching resource ${resource}`);
-                        return httpConn.request(resource);
+                        return httpConn.request(resource, httpOptions);
                 }).then((resp: HTTPReceivedResponse): void => {
                     if (resp.status.code === HTTP_OK) {
                         this.log("Received OK response");
@@ -595,8 +631,11 @@ export class CSHubClient {
     }
 
     /** Fetch an untyped JSON object from the hub. */
-    private async fetchJson(resource: string): Promise<unknown> {
-        const resIO = await this.fetch(resource);
+    private async fetchJson(
+        resource: string,
+        options?: CSHubClientRequestOptions,
+    ): Promise<unknown> {
+        const resIO = await this.fetch(resource, options);
         return this.parseResponseJson(resIO);
     }
 
@@ -608,11 +647,12 @@ export class CSHubClient {
     public async fetchVersionCompatibilityInfo(
         clientName: string,
         clientVersion: string,
+        options?: CSHubClientRequestOptions,
     ): Promise<CSHubVersionCompatibilityInfo|undefined> {
         const versionCheckResource: string = `/command/check_version/${encodeURIComponent(clientName)}/?version=${encodeURIComponent(clientVersion)}`;
         let respResult: CSHubVersionCompatibilityInfo|undefined;
         try {
-            const respJson: unknown = await this.fetchJson(versionCheckResource);
+            const respJson: unknown = await this.fetchJson(versionCheckResource, options);
             respResult = respJson as CSHubVersionCompatibilityInfo;
         }
         catch (e: unknown) {
@@ -630,7 +670,10 @@ export class CSHubClient {
     }
 
     /** Fetch a list of analysis projects. */
-    public async fetchProjectInfo(searchProjectPath?: string): Promise<CSProjectInfo[]> {
+    public async fetchProjectInfo(
+        searchProjectPath?: string,
+        options?: CSHubClientRequestOptions,
+    ): Promise<CSProjectInfo[]> {
         const prjGridParams: string = "[project id.sort:asc][project id.visible:1][path.visible:1]";
         let projectSearchPath: string = "/project_search.json";
         projectSearchPath += `?sprjgrid=${encodeURIComponent(prjGridParams)}`;
@@ -640,7 +683,7 @@ export class CSHubClient {
             projectSearchPath += "&query=" + projectSearchQuery;
         }
         projectSearchPath += `&${RESPONSE_TRY_PLAINTEXT}=${CS_HUB_PARAM_TRUE}`;
-        const respJson: unknown = await this.fetchJson(projectSearchPath);
+        const respJson: unknown = await this.fetchJson(projectSearchPath, options);
         const respResults: CSHubApiSearchResults<CSHubProjectRow> = respJson as CSHubApiSearchResults<CSHubProjectRow>;
         this.log("Received project JSON");
         let projectInfoArray: CSProjectInfo[] = [];
@@ -674,10 +717,13 @@ export class CSHubClient {
     }
 
     /** Fetch a list of analyses for a project. */
-    public async fetchAnalysisInfo(projectId: CSProjectId): Promise<CSAnalysisInfo[]> {
+    public async fetchAnalysisInfo(
+        projectId: CSProjectId,
+        options?: CSHubClientRequestOptions,
+    ): Promise<CSAnalysisInfo[]> {
         const analysisTableSpec: string = encodeURIComponent("[analysis id.sort:desc]");
         const analysisListPath: string = `/project/${encodeURIComponent(projectId)}.json?${RESPONSE_TRY_PLAINTEXT}=${CS_HUB_PARAM_TRUE}&anlgrid=${analysisTableSpec}`;
-        const respJson: unknown = await this.fetchJson(analysisListPath);
+        const respJson: unknown = await this.fetchJson(analysisListPath, options);
         const respResults: CSHubApiSearchResults<CSHubAnalysisRow> = respJson as CSHubApiSearchResults<CSHubAnalysisRow>;
         let analysisInfoArray: CSAnalysisInfo[] = [];
         if (respResults && respResults.rows !== undefined) {
@@ -744,7 +790,7 @@ export class CSHubClient {
         if (queryString) {
             sarifAnalysisUrlPath += '?' + queryString;
         }
-        return this.fetch(sarifAnalysisUrlPath);
+        return this.fetch(sarifAnalysisUrlPath, options);
     }
 
     /** Fetch SARIF results from a single analysis that are not present in a second, base analysis. */
@@ -767,7 +813,7 @@ export class CSHubClient {
         if (queryString) {
             sarifAnalysisUrlPath += '&' + queryString;
         }
-        return this.fetch(sarifAnalysisUrlPath);
+        return this.fetch(sarifAnalysisUrlPath, options2);
     }
 
 }

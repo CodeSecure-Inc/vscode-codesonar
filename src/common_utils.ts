@@ -1,5 +1,38 @@
 /** Common/Utility functions, etc. for VS Code extension. */
 
+/** Error raised when we know an operation was deliberatedly canceled by user action.
+ * 
+ * Note: Microsoft types and documentation prefer two "l"s when spelling derivatives of "Cancel".
+ * However Merriam-Webster indicates that one "l" should usually be used for American English,
+ * except for the word "Cancellation" (which always has two "l"s).
+ * To make the types consistent with Microsoft, we use two "l" chars in type names,
+ * but for UI strings, we use one "l".
+*/
+export class OperationCancelledError extends Error {
+    constructor(message?: string) {
+        super(message || "Canceled");
+        // See: https://www.typescriptlang.org/docs/handbook/release-notes/typescript-2-2.html#support-for-newtarget
+        Object.setPrototypeOf(this, new.target.prototype);
+    }
+}
+
+/** Interface for objects that can signal cancellation of a long-running operation.
+ * 
+ *  Intended to be somewhat compatible with VSCode CancellationToken.
+*/
+export interface CancellationSignal {
+    /** Check if a cancellation was signaled previously. */
+    isCancellationRequested: boolean;
+    /** Call a callback when a cancellation event is signaled.
+     * 
+     *  @returns a function, which if invoked, will unregister the event callback.
+    */
+    onCancellationRequested: (callback:()=>void) => (()=>void);
+    /** Create an Error object that is safe to throw upon cancellation. */
+    createCancellationError: (message?: string) => Error;
+}
+
+
 /** Try to type-check a value as a NodeJS.ErrnoException.
  * 
  * Error objects in NodeJS have a few extra properties, like 'code',

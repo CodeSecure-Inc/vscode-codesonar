@@ -18,10 +18,13 @@ import {
     asErrnoException,
     errorToString,
     replaceInvalidFileNameChars,
+    CancellationSignal,
+    OperationCancelledError,
 } from './common_utils';
 import { Logger } from './logger';
-import { 
+import {
     findActiveVSWorkspaceFolderPath,
+    VSCodeCancellationSignal,
 } from './vscode_ex';
 import {
     loadCSHubUserKey,
@@ -41,6 +44,10 @@ import {
     CSHubVersionCompatibilityInfo,
 } from './cs_hub_client';
 import * as sarifView from './sarif_viewer';
+
+
+const DEPTH_ZERO_SELF_SIGNED_CERT_CODE: string = 'DEPTH_ZERO_SELF_SIGNED_CERT';
+const SELF_SIGNED_CERT_IN_CHAIN_CODE: string = 'SELF_SIGNED_CERT_IN_CHAIN';
 
 
 const SARIF_EXT_NAME: string = 'sarif';
@@ -306,8 +313,8 @@ async function executeCodeSonarSarifDownload(
             const ex: NodeJS.ErrnoException|undefined = asErrnoException(e);
             const errorName: string|undefined = ex?.code;
             e2.code = errorName;
-            if (errorName === 'DEPTH_ZERO_SELF_SIGNED_CERT'
-                    || errorName === 'SELF_SIGNED_CERT_IN_CHAIN'
+            if (errorName === DEPTH_ZERO_SELF_SIGNED_CERT_CODE
+                    || errorName === SELF_SIGNED_CERT_IN_CHAIN_CODE
             ) {
                 certificateNotTrustedError = e2;
             } else {
@@ -771,10 +778,14 @@ async function downloadSarifResults(
         cancellable: true,
     }, (
         progress: IncrementalProgress,
-        token: CancellationToken,
+        cancellationToken: CancellationToken,
     ) => {
+        const cancellationSignal: CancellationSignal = new VSCodeCancellationSignal(cancellationToken);
         // TODO: download to temporary location and move it when finished
         const destinationStream: NodeJS.WritableStream = fs.createWriteStream(destinationFilePath);
+
+        const sarifSearchOptions2: CSHubSarifSearchOptions = Object.assign({}, sarifSearchOptions);
+        sarifSearchOptions2.cancellationSignal = cancellationSignal;
 
         progress.report({increment: 0});
         // The progress meter sums up the increment values that we give it,
@@ -819,10 +830,10 @@ async function downloadSarifResults(
             intervalMS);
         let sarifPromise: Promise<Readable>;
         if (baseAnalysisId !== undefined) {
-            sarifPromise = hubClient.fetchSarifAnalysisDifferenceStream(analysisId, baseAnalysisId, sarifSearchOptions);
+            sarifPromise = hubClient.fetchSarifAnalysisDifferenceStream(analysisId, baseAnalysisId, sarifSearchOptions2);
         }
         else {
-            sarifPromise = hubClient.fetchSarifAnalysisStream(analysisId, sarifSearchOptions);
+            sarifPromise = hubClient.fetchSarifAnalysisStream(analysisId, sarifSearchOptions2);
         }
         return new Promise<string>((
             resolve: (savedFilePath: string) => void,
@@ -830,10 +841,25 @@ async function downloadSarifResults(
         ): void => {
             const reject: (e: unknown) => void = (e: unknown): void => {
                 clearInterval(timer);
-                destinationStream.end();
-                _reject(e);
+                destinationStream.end((): void => {
+                    fs.unlink(destinationFilePath, (e2: unknown): void => {
+                        // Ignore this unlink error since the rejection error is more important.
+                    });
+                });
+                let e2: unknown = e;
+                if (cancellationSignal.isCancellationRequested) {
+                    // If we cancel during download, Node will probably raise a generic error,
+                    //  with the message code='ECONNRESET' and message "aborted".
+                    // Rather than assume that such an error signals a cancellation,
+                    //  always assume that if a cancellation was requested,
+                    //  that the error is simply a result of the cancellation.
+                    e2 = cancellationSignal.createCancellationError();
+                }
+                _reject(e2);
             };
             sarifPromise.then((sarifStream: Readable): void => {
+                // Errors from the sarifStream don't seem to bubble-up to the pipe stream.
+                sarifStream.on('error', reject);
                 sarifStream.pipe(destinationStream
                     ).on('error', reject
                     ).on('finish', (): void => {
@@ -849,20 +875,6 @@ async function downloadSarifResults(
                         },
                         intervalMS);
                     });
-                token.onCancellationRequested(() => {
-                    sarifStream.unpipe();
-                    sarifStream.destroy();
-                    destinationStream.end(
-                        (): void => {
-                            fs.unlink(destinationFilePath, (e: unknown): void => {
-                                if (e) {
-                                    reject(e);
-                                } else {
-                                    reject(new Error("Canceled"));
-                                }
-                            });
-                        });
-                });
                 }).catch(reject);
         });
     });
