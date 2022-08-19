@@ -513,7 +513,11 @@ async function verifyHubCompatibility(
         && versionCompatibilityInfo.clientOK === false
     ) {
         // The hub recognized our protocol version and it rejected us:
-        throw new Error("This CodeSonar extension is too old to communicate with your hub.  Please upgrade the extension.");
+        const hubMessage: string = (
+            versionCompatibilityInfo.message 
+            || "Please upgrade the extension.");
+        const message: string = `This CodeSonar extension is not compatible with your hub. ${hubMessage}`;
+        throw new Error(message);
     }
     return versionCompatibilityInfo;
 }
