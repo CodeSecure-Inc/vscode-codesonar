@@ -1,7 +1,10 @@
 /** CodeSonar extension for VS Code. */
 import { commands, Disposable, ExtensionContext, window } from 'vscode';
 
-import { errorToString } from './common_utils';
+import { 
+    errorToString,
+    OperationCancelledError,
+} from './common_utils';
 import { Logger } from './logger';
 import { CSConfigIO } from './cs_vscode_config';
 import { executeRemoveCSHubUserPassword } from './remove_hub_password_command';
@@ -10,11 +13,25 @@ import {
     executeCodeSonarDiffSarifDownload,
  } from './sarif_download_command';
 
+ /** Activate the VS Code extension. */
 export function activate(context: ExtensionContext) {
     const disposables: Disposable[] = [];
     const verboseErrors: boolean = false;
     // TODO consider using VS Code Output channel instead of the global console:
     const logger: Logger = console;
+
+    const showError: (e: unknown, defaultMessage: string) => void  =  (e: unknown, defaultMessage: string) => {
+        const errorMessage = errorToString(e, {
+            verbose: verboseErrors,
+            message: defaultMessage, 
+        });
+        if (e instanceof OperationCancelledError) {
+            window.showInformationMessage(errorMessage);
+        }
+        else {
+            window.showErrorMessage(errorMessage);
+        }
+    };
 
     disposables.push(commands.registerCommand(
         'vscode-codesonar.download-full-sarif',
@@ -24,11 +41,7 @@ export function activate(context: ExtensionContext) {
                 new CSConfigIO(),
                 context.secrets,
             ).catch((e: unknown): void => {
-                const errorMessage = errorToString(e, {
-                        verbose: verboseErrors,
-                        message: 'CodeSonar SARIF download failed.', 
-                    });
-                window.showErrorMessage(errorMessage);
+                showError(e, 'CodeSonar SARIF download failed.');
             });
         }));
     disposables.push(commands.registerCommand(
@@ -39,28 +52,20 @@ export function activate(context: ExtensionContext) {
                 new CSConfigIO(),
                 context.secrets,
             ).catch((e: unknown): void => {
-                const errorMessage = errorToString(e, {
-                        verbose: verboseErrors,
-                        message: 'CodeSonar SARIF download failed.', 
-                    });
-                window.showErrorMessage(errorMessage);
+                showError(e, 'CodeSonar SARIF download failed.');
             });
         }));
-        disposables.push(commands.registerCommand(
-            'vscode-codesonar.remove-hubuser-password',
-            (): void => {
-                executeRemoveCSHubUserPassword(
-                    logger,
-                    new CSConfigIO(),
-                    context.secrets,
-                ).catch((e: any): void => {
-                    const errorMessage = errorToString(e, {
-                        verbose: verboseErrors,
-                        message: 'Failed to remove password.', 
-                    });
-                    window.showErrorMessage(errorMessage);
-                });
-            }));
+    disposables.push(commands.registerCommand(
+        'vscode-codesonar.remove-hubuser-password',
+        (): void => {
+            executeRemoveCSHubUserPassword(
+                logger,
+                new CSConfigIO(),
+                context.secrets,
+            ).catch((e: any): void => {
+                showError(e, 'Failed to remove password.');
+            });
+        }));
         
     context.subscriptions.push(...disposables);
 }
