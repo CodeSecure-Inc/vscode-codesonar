@@ -1,13 +1,5 @@
 /** Support for codesonar.json file. */
-import { Stats } from 'fs';
-import { mkdir, readFile, stat, writeFile } from 'fs/promises';
-import * as path from 'path';
-
 import { workspace, WorkspaceConfiguration } from 'vscode';
-
-import { errorToString } from './common_utils';
-import { Logger } from './logger';
-import { findVSConfigFilePath, findVSConfigFolderPath } from './vscode_ex';
 
 import { CSHubAddress } from './csonar_ex';
 
