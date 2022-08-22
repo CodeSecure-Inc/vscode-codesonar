@@ -3,13 +3,15 @@ import { strict as assert } from 'node:assert';
 import { readFile } from 'fs/promises';
 import { Readable } from 'stream';
 
-import { 
-    asErrnoException,
+import { CancellationSignal } from './common_utils';
+import {
     errorToString,
-    readTextStream,
-    CancellationSignal,
-} from './common_utils';
+    errorToMessageCode,
+    ErrorMessageCode,
+    EPROTO_CODE,
+} from './errors_ex';
 import { Logger } from './logger';
+import { readTextStream } from './stream_ex';
 
 import { 
     encodeURIQuery,
@@ -30,8 +32,6 @@ import {
     CSHubUserKey,
 } from './csonar_ex';
 
-
-const EPROTO_CODE: string = 'EPROTO';
 
 const FORM_URLENCODED_CONTENT_TYPE: string = "application/x-www-form-urlencoded";
 
@@ -331,10 +331,9 @@ export class CSHubClient {
                 }
                 catch (e: unknown) {
                     this.log(e);
-                    const ex: NodeJS.ErrnoException|undefined = asErrnoException(e);
-                    const code: string = ex?.code ?? '';
+                    const ecode: ErrorMessageCode = errorToMessageCode(e) || '';
                     // EPROTO error occurs if we try to speak in HTTPS to an HTTP hub:
-                    if (code !== EPROTO_CODE) {
+                    if (ecode !== EPROTO_CODE) {
                         // Many other legitimate connection errors could occur,
                         //  such as 'DEPTH_ZERO_SELF_SIGNED_CERT',
                         //  and we want those errors to be seen by the caller.

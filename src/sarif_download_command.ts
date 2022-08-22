@@ -1,5 +1,8 @@
 import { strict as assert } from 'assert';
-import * as fs from 'fs';
+import {
+    createWriteStream as createFileWriteStream,
+    unlink as unlinkFile,
+} from 'fs';
 import * as path from 'path';
 import { Readable } from 'stream';
 
@@ -15,17 +18,28 @@ import {
 } from 'vscode';
 
 import { 
-    asErrnoException,
-    errorToString,
     replaceInvalidFileNameChars,
     CancellationSignal,
-    OperationCancelledError,
 } from './common_utils';
+import {
+    errorToMessageCode,
+    errorToString,
+    ErrorMessageCode,
+    DEPTH_ZERO_SELF_SIGNED_CERT_CODE,
+    SELF_SIGNED_CERT_IN_CHAIN_CODE,
+} from './errors_ex';
+import {
+    readFileInfo,
+    readFileText,
+    FileInfo,
+} from './fs_ex';
 import { Logger } from './logger';
+import { SarifLog, SarifRun } from './sarif';
 import {
     findActiveVSWorkspaceFolderPath,
     VSCodeCancellationSignal,
 } from './vscode_ex';
+
 import {
     loadCSHubUserKey,
     CSHubAddress,
@@ -45,10 +59,6 @@ import {
     CSHubClientRequestOptions,
 } from './cs_hub_client';
 import * as sarifView from './sarif_viewer';
-
-
-const DEPTH_ZERO_SELF_SIGNED_CERT_CODE: string = 'DEPTH_ZERO_SELF_SIGNED_CERT';
-const SELF_SIGNED_CERT_IN_CHAIN_CODE: string = 'SELF_SIGNED_CERT_IN_CHAIN';
 
 
 const SARIF_EXT_NAME: string = 'sarif';
@@ -310,12 +320,10 @@ async function executeCodeSonarSarifDownload(
             const messageHeader: string = "CodeSonar hub sign-in failure";
             const messageBody: string = errorToString(e, { message: "Internal Error"});
             const errorMessage = `${messageHeader}: ${messageBody}`;
+            const ecode: ErrorMessageCode|undefined = errorToMessageCode(e);
             const e2: NodeJS.ErrnoException = new Error(errorMessage);
-            const ex: NodeJS.ErrnoException|undefined = asErrnoException(e);
-            const errorName: string|undefined = ex?.code;
-            e2.code = errorName;
-            if (errorName === DEPTH_ZERO_SELF_SIGNED_CERT_CODE
-                    || errorName === SELF_SIGNED_CERT_IN_CHAIN_CODE
+            if (ecode === DEPTH_ZERO_SELF_SIGNED_CERT_CODE
+                    || ecode === SELF_SIGNED_CERT_IN_CHAIN_CODE
             ) {
                 certificateNotTrustedError = e2;
             } else {
@@ -496,7 +504,19 @@ async function executeCodeSonarSarifDownload(
             sarifSearchOptions.warningFilter = warningFilter;
         }
         await downloadSarifResults(hubClient, destinationFilePath, analysisInfo, baseAnalysisInfo, sarifSearchOptions);
-        if (extensionOptions.autoOpenSarifViewer) {
+        // We want to know if the SARIF file contains zero results.
+        //  A SARIF file with nothing but metadata is expected to be less than 1KB.
+        const SARIF_MAX_SIZE: number = 4096;
+        const warningCount: number|undefined = await readSarifResultCount(destinationFilePath, SARIF_MAX_SIZE);
+        if (warningCount === 0) {
+            if (baseAnalysisInfo === undefined) {
+                window.showWarningMessage("No warning results were found in the analysis.");
+            }
+            else {
+                window.showInformationMessage("No new warning results were found in the analysis.");
+            }
+        }
+        else if (extensionOptions.autoOpenSarifViewer) {
             await sarifView.showSarifDocument(destinationUri);
         }
         else {
@@ -770,6 +790,35 @@ async function showSarifSaveDialog(defaultFilePath: string): Promise<Uri|undefin
         });
 }
 
+/** Count the number of warning results in a small SARIF file.
+ * 
+ *  @returns count of result records in Sarif if file file is not larger than maxBytes.
+ *    If file is larger than maxBytes, returns undefined.
+*/
+async function readSarifResultCount(
+    sarifFilePath: string,
+    maxBytes: number,
+): Promise<undefined|number> {
+    const fileInfo: FileInfo = await readFileInfo(sarifFilePath);
+    let resultCount: number|undefined = undefined;
+    if (BigInt(fileInfo.size) <= BigInt(maxBytes)) {
+        const sarifText: string = await readFileText(sarifFilePath);
+        const sarifJson: any = JSON.parse(sarifText);
+        const sarifDoc: SarifLog|undefined = sarifJson as SarifLog;
+        resultCount = 0;
+        if (sarifDoc && sarifDoc.runs) {
+            for (let run of sarifDoc.runs) {
+                if (run && run.results) {
+                    for (let result of run.results) {
+                        resultCount += 1;
+                    }
+                }
+            }
+        }
+    }
+    return resultCount;
+}
+
 async function downloadSarifResults(
         hubClient: CSHubClient,
         destinationFilePath: string,
@@ -789,7 +838,7 @@ async function downloadSarifResults(
     ) => {
         const cancellationSignal: CancellationSignal = new VSCodeCancellationSignal(cancellationToken);
         // TODO: download to temporary location and move it when finished
-        const destinationStream: NodeJS.WritableStream = fs.createWriteStream(destinationFilePath);
+        const destinationStream: NodeJS.WritableStream = createFileWriteStream(destinationFilePath);
 
         const sarifSearchOptions2: CSHubSarifSearchOptions = Object.assign({}, sarifSearchOptions);
         sarifSearchOptions2.cancellationSignal = cancellationSignal;
@@ -849,7 +898,7 @@ async function downloadSarifResults(
             const reject: (e: unknown) => void = (e: unknown): void => {
                 clearInterval(timer);
                 destinationStream.end((): void => {
-                    fs.unlink(destinationFilePath, (e2: unknown): void => {
+                    unlinkFile(destinationFilePath, (e2: unknown): void => {
                         // Ignore this unlink error since the rejection error is more important.
                     });
                 });

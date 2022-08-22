@@ -3,7 +3,7 @@
 //import * as process from 'process';
 import { readFile } from 'fs';
 
-import { errorToString } from './common_utils';
+import { errorToString } from './errors_ex';
 import { 
     HTTPClientConnection,
     HTTPClientConnectionOptions,

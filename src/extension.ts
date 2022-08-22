@@ -2,9 +2,11 @@
 import { commands, Disposable, ExtensionContext, window } from 'vscode';
 
 import { 
-    errorToString,
     OperationCancelledError,
 } from './common_utils';
+import {
+    errorToString,
+} from './errors_ex';
 import { Logger } from './logger';
 import { CSConfigIO } from './cs_vscode_config';
 import { executeRemoveCSHubUserPassword } from './remove_hub_password_command';

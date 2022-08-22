@@ -5,7 +5,7 @@
  *  in order to infer the nature of the contents.
 */
 
-import { readTextStream } from './common_utils';
+import { readTextStream } from './stream_ex';
 
 
 const LF: string = "\n";

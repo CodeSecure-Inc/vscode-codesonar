@@ -1,6 +1,4 @@
 /** Test front-end for csHubClient module. */
-import { readFile } from 'fs';
-
 import {
     CSHubUserKey,
 } from './csonar_ex';
