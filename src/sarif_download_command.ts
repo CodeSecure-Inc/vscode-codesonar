@@ -42,6 +42,7 @@ import {
     CSAnalysisInfo,
     CSHubSarifSearchOptions,
     CSHubVersionCompatibilityInfo,
+    CSHubClientRequestOptions,
 } from './cs_hub_client';
 import * as sarifView from './sarif_viewer';
 
@@ -627,30 +628,36 @@ async function verifyHubCredentials(hubClient: CSHubClient): Promise<string|unde
 
 async function fetchCSProjectRecords(hubClient: CSHubClient, projectPath?: string): Promise<CSProjectInfo[]> {
     return await window.withProgress<CSProjectInfo[]>({
-            cancellable: false,
+            cancellable: true,
             location: ProgressLocation.Window,
             title: "fetching CodeSonar projects",
         },
         (
             progress: IncrementalProgress,
-            cancelToken: CancellationToken,
+            cancellationToken: CancellationToken,
         ): Thenable<CSProjectInfo[]> => {
-            return hubClient.fetchProjectInfo(projectPath);
+            let requestOptions: CSHubClientRequestOptions = {
+                cancellationSignal: new VSCodeCancellationSignal(cancellationToken),
+            };
+            return hubClient.fetchProjectInfo(projectPath, requestOptions);
         });   
 }
 
 /** Request list of analyses from the hub. */
 async function fetchCSAnalysisRecords(hubClient: CSHubClient, projectId: CSProjectId): Promise<CSAnalysisInfo[]> {
     return await window.withProgress<CSAnalysisInfo[]>({
-            cancellable: false,
+            cancellable: true,
             location: ProgressLocation.Window,
             title: "fetching CodeSonar analyses",
         },
         (
             progress: IncrementalProgress,
-            cancelToken: CancellationToken,
+            cancellationToken: CancellationToken,
         ): Thenable<CSAnalysisInfo[]> => {
-            return hubClient.fetchAnalysisInfo(projectId);
+            let requestOptions: CSHubClientRequestOptions = {
+                cancellationSignal: new VSCodeCancellationSignal(cancellationToken),
+            };
+            return hubClient.fetchAnalysisInfo(projectId, requestOptions);
         });
 }
 
