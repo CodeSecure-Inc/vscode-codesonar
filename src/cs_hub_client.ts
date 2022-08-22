@@ -670,15 +670,21 @@ export class CSHubClient {
 
     /** Fetch a list of analysis projects. */
     public async fetchProjectInfo(
-        searchProjectPath?: string,
+        searchProject?: string,
         options?: CSHubClientRequestOptions,
     ): Promise<CSProjectInfo[]> {
+        const PTREE_SEP: string = "/";
         const prjGridParams: string = "[project id.sort:asc][project id.visible:1][path.visible:1]";
         let projectSearchPath: string = "/project_search.json";
         projectSearchPath += `?sprjgrid=${encodeURIComponent(prjGridParams)}`;
-        if (searchProjectPath) {
-            const projectSearchLiteral: string = encodeCSSearchStringLiteral(searchProjectPath);
-            const projectSearchQuery: string = encodeURIComponent(`ptree_path=${projectSearchLiteral}`);
+        if (searchProject) {
+            const projectSearchLiteral: string = encodeCSSearchStringLiteral(searchProject);
+            let projectFieldName: string = "project";
+            if (searchProject.indexOf(PTREE_SEP) >= 0) {
+                // If it contains a separator, assume it is a path:
+                projectFieldName = "ptree_path";
+            }
+            const projectSearchQuery = encodeURIComponent(`${projectFieldName}=${projectSearchLiteral}`);
             projectSearchPath += "&query=" + projectSearchQuery;
         }
         projectSearchPath += `&${RESPONSE_TRY_PLAINTEXT}=${CS_HUB_PARAM_TRUE}`;
