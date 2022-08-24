@@ -30,7 +30,7 @@ Many "CodeSonar" extension settings are provided in order to customize hub commu
 
 ## Known Issues
 
-None
+* An error will not be displayed if user enters incorrect passphrase when authenticating with a protected hub key.
 
 ## Release Notes
 
