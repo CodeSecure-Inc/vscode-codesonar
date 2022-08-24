@@ -403,7 +403,7 @@ export class HTTPClientConnection {
     /** Make a request to the server.
      *  @returns Promise containing response stream.
      */
-    public async request(
+    public request(
             resource: string|URL, 
             options?: HTTPClientRequestOptions,
             data?: string|Buffer,
@@ -468,22 +468,21 @@ export class HTTPClientConnection {
         if (this.clientCertKey) {
             httpsOptions.key = this.clientCertKey;
         }
-        if (this._requestPassphrase !== undefined) {
-            this.log("Requesting passphrase for client certificate key...");
-            this._passphrase = await this._requestPassphrase();
-            // Only request passphrase one time:
-            this._requestPassphrase = undefined;
-        }
-        if (this._passphrase !== undefined) {
-            httpsOptions.passphrase = this._passphrase;
-        }
         return new Promise<HTTPReceivedResponse>((
                 resolve: (response: HTTPReceivedResponse) => void,
-                reject: (e: any) => void,
+                reject: (e: unknown) => void,
         ) => {
+
             if (targetUrl.origin !== this.baseUrlString) {
                 reject(new Error(`Requested URL origin '${targetUrl.origin}' does not match the HTTP connection to '${this.baseUrlString}`));
             }
+
+            // The code below makes a chain of callbacks:
+            //   get client certificate key passphrase (if necessary)
+            //     --> initiate request
+            //       --> handle response
+            //   callback handlers are defined in reverse order below:
+
             const responseCallback: ((res: http.IncomingMessage) => void) = (
                 res: http.IncomingMessage
             ) => {
@@ -507,7 +506,7 @@ export class HTTPClientConnection {
                     res.statusCode ?? 0,
                 );
                 let rejectError: Error|undefined;
-                let redirectPromise: Promise<void>|undefined;
+                let redirectPromise: Promise<HTTPReceivedResponse>|undefined;
                 if (httpStatus.code === HTTP_MOVED_PERMANENTLY) {
                     // We cannot redirect from this connection, even if it is just to switch protocol.
                     const redirectTargetUrlString: string|undefined = res.headers["location"];
@@ -529,14 +528,17 @@ export class HTTPClientConnection {
                                 redirectTargetUrl,
                                 options,
                                 data,
-                                ).then(resolve).catch(reject);
+                                );
                     }
                 }
                 // else resolve a non-301 response, could be 200, but could be anything else.
                 if (rejectError) {
                     reject(rejectError);
                 }
-                else if (redirectPromise === undefined) {
+                else if (redirectPromise) {
+                    redirectPromise.then(resolve).catch(reject);
+                }
+                else {
                     resolve({
                         url: targetUrl,
                         body: res,
@@ -544,50 +546,80 @@ export class HTTPClientConnection {
                         headers: headers,
                     });
                 }
-                // else redirectPromise will call resolve|reject
             };
-            let requestObject: http.ClientRequest|undefined;
-            if (this.protocol === HTTP_PROTOCOL) {
-                requestObject = http.request(httpOptions, responseCallback);
-            }
-            else if (this.protocol === HTTPS_PROTOCOL) {
-                requestObject = https.request(httpsOptions, responseCallback);
-            }
 
-            if (requestObject === undefined) {
-                reject(new Error("Could not create HTTP request."));
-            }
-            else {
-                const capturedRequestObject: http.ClientRequest = requestObject;
+            const requestCallback: ((requestObject: http.ClientRequest) => void) = (
+                requestObject: http.ClientRequest
+            ) => {
+                // TODO: if there is a TLS connection error,
+                //   for example, when user provides invalid passphrase for a client cert key,
+                //   the requestObject will be created,
+                //   and the code will get to this point,
+                //   but no further requestObject events will be raised.
+                //   In particular, the 'error', 'socket', or 'close' events will not be raised,
+                //   which makes it impractical to detect a failed TLS connection.
+                //  Perhaps it would be possible to catch the error by creating a derived Agent object
+                //   and overriding Agent.createConnection().
                 let unregisterCancellation: undefined|(()=>void);
                 if (cancellationSignal !== undefined) {
+                    const capturedCancellationSignal: CancellationSignal = cancellationSignal;
                     unregisterCancellation = cancellationSignal.onCancellationRequested((): void => {
                         this.log("HTTP request was canceled.");
-                        capturedRequestObject.destroy();
+                        const e: Error = capturedCancellationSignal.createCancellationError();
+                        requestObject.destroy(e);
                     });
                 }
                 requestObject.on('timeout', (): void => {
-                    capturedRequestObject.destroy();
+                    const e: Error = new Error("Network connection timed-out.");
+                    requestObject.destroy(e);
                 });
-                requestObject.on('error', (e: unknown) => {
-                    if (cancellationSignal !== undefined && cancellationSignal.isCancellationRequested) {
-                        const e2: Error = cancellationSignal.createCancellationError();
-                        reject(e2);
-                    }
-                    else {
-                        reject(e);
-                    }
-                });
+                requestObject.on('error', reject);
                 requestObject.on('close', () => {
                     if (unregisterCancellation !== undefined) {
                         unregisterCancellation();
                     }
                 });
                 if (dataBuffer !== undefined) {
-                    capturedRequestObject.write(dataBuffer);
+                    requestObject.write(dataBuffer);
                 }
                 requestObject.end();
-            } 
+            };
+
+            const passphraseCallback: (passphrase: string|undefined) => void = (
+                passphrase: string|undefined,
+            ): void => {
+                if (this._requestPassphrase && passphrase !== undefined) {
+                    this._passphrase = passphrase;
+                    // Only request passphrase one time:
+                    this._requestPassphrase = undefined;    
+                }
+                if (passphrase !== undefined) {
+                    httpsOptions.passphrase = passphrase;
+                }
+                let requestObject: http.ClientRequest|undefined;
+                if (this.protocol === HTTP_PROTOCOL) {
+                    requestObject = http.request(httpOptions, responseCallback);
+                }
+                else if (this.protocol === HTTPS_PROTOCOL) {
+                    requestObject = https.request(httpsOptions, responseCallback);
+                }
+                if (requestObject === undefined) {
+                    reject(new Error("Could not create HTTP request."));
+                }
+                else {
+                    requestCallback(requestObject);
+                }
+            };
+
+            let passphrasePromise: Promise<string|undefined>;
+            if (this._requestPassphrase !== undefined) {
+                this.log("Requesting passphrase for client certificate key...");
+                passphrasePromise = this._requestPassphrase();
+            }
+            else {
+                passphrasePromise = Promise<string|undefined>.resolve(this._passphrase);
+            }
+            passphrasePromise.then(passphraseCallback).catch(reject);
         });
     }
 }

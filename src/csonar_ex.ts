@@ -6,10 +6,13 @@ import * as path from 'path';
 import { PKCSFile } from './pkcs';
 
 
+export type CSHubAuthenticationMethod = "anonymous" | "password" | "certificate";
+
 export const PRJ_DIR_EXT: string = ".prj_files";
 export const PRJ_FILE_EXT: string = ".prj";
 
 const AID_FILE_NAME: string = "aid.txt";
+
 
 /** An object to help with finding .prj files. */
 export class CSProjectFile {

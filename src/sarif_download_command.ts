@@ -20,6 +20,7 @@ import {
 import { 
     replaceInvalidFileNameChars,
     CancellationSignal,
+    OperationCancelledError,
 } from './common_utils';
 import {
     errorToMessageCode,
@@ -43,6 +44,7 @@ import {
 import {
     loadCSHubUserKey,
     CSHubAddress,
+    CSHubAuthenticationMethod,
     CSProjectFile,
 } from './csonar_ex';
 import * as csConfig from './cs_vscode_config';
@@ -123,6 +125,7 @@ async function executeCodeSonarSarifDownload(
     let hubAddressString: string|undefined;
     let hubCAFilePath: string|undefined;
     let hubSocketTimeout: number|undefined;
+    let hubAuthMethod: CSHubAuthenticationMethod|undefined;
     let hubUserName: string|undefined;
     let hubUserPasswordFilePath: string|undefined;
     let hubUserCertFilePath: string|undefined;
@@ -170,6 +173,7 @@ async function executeCodeSonarSarifDownload(
         hubAddressString = hubConfig.address;
         hubSocketTimeout = hubConfig.timeout;
         hubCAFilePath = hubConfig.cacert;
+        hubAuthMethod = hubConfig.auth;
         hubUserName = hubConfig.hubuser;
         hubUserPasswordFilePath = hubConfig.hubpwfile;
         hubUserCertFilePath = hubConfig.hubcert;
@@ -225,6 +229,9 @@ async function executeCodeSonarSarifDownload(
     if (hubSocketTimeout !== undefined) {
         hubClientOptions.timeout = hubSocketTimeout;
     }
+    if (hubAuthMethod) {
+        hubClientOptions.auth = hubAuthMethod;
+    }
     if (hubUserName) {
         hubClientOptions.hubuser = hubUserName;
     }
@@ -270,7 +277,7 @@ async function executeCodeSonarSarifDownload(
             };
         }
     }
-    else if (hubUserPasswordFilePath) {
+    if (hubUserPasswordFilePath) {
         hubUserPasswordFilePath = resolveFilePath(hubUserPasswordFilePath);
         hubClientOptions.hubpwfile = hubUserPasswordFilePath;
         // Don't keep password sitting around if user changed auth method:
@@ -550,78 +557,67 @@ async function verifyHubCompatibility(
     return versionCompatibilityInfo;
 }
 
-function requestHubUserKeyPassphrase(
+async function requestHubUserKeyPassphrase(
     logger: Logger,
     hubAddressString: string,
     hubUserCertFilePath: string,
     hubUserCertKeyFilePath: string,
 ): Promise<string> {
-    return new Promise<string>((
-        resolve: (password: string) => void,
-        reject: (e: unknown) => void,
-    ) => {
-        window.showInputBox({
+    const inputValue: string|undefined = await window.showInputBox({
             password: true,
             prompt: `Enter passphrase for CodeSonar hub key '${hubUserCertKeyFilePath}' at '${hubAddressString}'`,
             placeHolder: 'passphrase',
             ignoreFocusOut: true,
-        }).then(
-            (inputValue: string|undefined): void => {
-                if (inputValue === undefined) {
-                    // TODO this error will be caught when we catch signin errors.
-                    //  we should detect and ignore the error in that case.
-                    reject(new Error("User cancelled passphrase input"));
-                }
-                else {
-                    resolve(inputValue);
-                }
-            },
-            reject);            
-    });
+        });
+    if (inputValue === undefined) {
+        throw new OperationCancelledError("User cancelled passphrase input.");
+    }
+    return inputValue;
 }
 
-function requestHubUserPassword(
+async function requestHubUserPassword(
     logger: Logger,
     secretStorage: SecretStorage,
     passwordStorageKeyString: string,
     hubAddressString: string,
     hubUserName: string,
 ): Promise<string> {
-    return new Promise<string>((
-            resolve: (password: string) => void,
-            reject: (e: unknown) => void,
-        ) => {
-        secretStorage.get(passwordStorageKeyString).then((password: string|undefined): void => {
-            if (password !== undefined) {
-                logger.info("Found saved password");
-                resolve(password);
-            }
-            else {
-                window.showInputBox({
-                    password: true,
-                    prompt: `Enter password for CodeSonar hub user '${hubUserName}' at '${hubAddressString}'`,
-                    placeHolder: 'password',
-                    ignoreFocusOut: true,
-                }).then(
-                    (inputValue: string|undefined): void => {
-                        if (inputValue === undefined) {
-                            // TODO this error will be caught when we catch signin errors.
-                            //  we should detect and ignore the error in that case.
-                            reject(new Error("User cancelled password input"));
-                        }
-                        else {
-                            secretStorage.store(passwordStorageKeyString, inputValue).then(
-                                (): void => {
-                                    resolve(inputValue);
-                                },
-                                reject,
-                            );
-                        }
-                    },
-                    reject);
-            }
+    let password: string|undefined;
+    
+    try {
+        password= await secretStorage.get(passwordStorageKeyString);
+    }
+    catch (e: unknown) {
+        const errorMessage: string = errorToString(e);
+        logger.warn(`Failed to query VS Code Secret Store: ${errorMessage}`);
+    }
+    if (password !== undefined) {
+        logger.info("Found saved password");
+    }
+    else {
+        const inputValue: string|undefined = await window.showInputBox({
+            password: true,
+            prompt: `Enter password for CodeSonar hub user '${hubUserName}' at '${hubAddressString}'`,
+            placeHolder: 'password',
+            ignoreFocusOut: true,
         });
-    });
+        if (inputValue === undefined) {
+            // TODO this error will be caught when we catch signin errors.
+            //  we should detect and ignore the error in that case.
+            throw new OperationCancelledError("User cancelled password input");
+        }
+        else {
+            try {
+                await  secretStorage.store(passwordStorageKeyString, inputValue);
+            }
+            catch (e: unknown) {
+                const errorMessage: string = errorToString(e);
+                logger.warn(`Failed to save to VS Code Secret Store: ${errorMessage}`);
+            }
+            password = inputValue;
+        }
+    }
+    return password;
 }
 
 /** Try to sign-in to hub.

@@ -284,7 +284,10 @@ export class CSHubClient {
                 httpOptions.ca = await readFile(hubOptions.cafile);
                 protocol = HTTPS_PROTOCOL;
             }
-            if (hubOptions.hubkey !== undefined) {
+            if ((hubOptions.auth === undefined
+                    || hubOptions.auth === "certificate"
+                ) && hubOptions.hubkey !== undefined
+            ) {
                 await hubOptions.hubkey.load();
                 httpOptions.cert = hubOptions.hubkey.cert;
                 httpOptions.key = hubOptions.hubkey.key;
@@ -526,8 +529,11 @@ export class CSHubClient {
                     httpOptions,
                 ).then((respBody: NodeJS.ReadableStream): void => {
                     // Ignore response body:
+                    respBody.on('error', reject
+                        ).on('end', (): void => {
+                            resolve(successMessage);
+                        });
                     respBody.resume();
-                    resolve(successMessage);
                 }).catch((e: any): void => {
                     if ((e instanceof CSHubRequestError)
                         && e.code !== undefined
@@ -607,10 +613,11 @@ export class CSHubClient {
                 resolve: (resIO: Readable) => void,
                 reject: (e: unknown) => void,
             ) => {
-                this.getHttpClientConnection(options).then(
-                    (httpConn: HTTPClientConnection): Promise<HTTPReceivedResponse> => {
-                        this.log(`Fetching resource ${resource}`);
-                        return httpConn.request(resource, httpOptions);
+                this.getHttpClientConnection(options).then((
+                    httpConn: HTTPClientConnection,
+                ): Promise<HTTPReceivedResponse> => {
+                    this.log(`Fetching resource ${resource}`);
+                    return httpConn.request(resource, httpOptions);
                 }).then((resp: HTTPReceivedResponse): void => {
                     if (resp.status.code === HTTP_OK) {
                         this.log("Received OK response");
@@ -635,7 +642,7 @@ export class CSHubClient {
         options?: CSHubClientRequestOptions,
     ): Promise<unknown> {
         const resIO = await this.fetch(resource, options);
-        return this.parseResponseJson(resIO);
+        return await this.parseResponseJson(resIO);
     }
 
     /** Try to fetch hub and client version compatibility information.

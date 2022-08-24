@@ -1,7 +1,10 @@
 /** Support for codesonar.json file. */
 import { workspace, WorkspaceConfiguration } from 'vscode';
 
-import { CSHubAddress } from './csonar_ex';
+import {
+    CSHubAddress,
+    CSHubAuthenticationMethod,
+} from './csonar_ex';
 
 import {
     CSONAR_VSCODE_VERSION_STRING,
@@ -37,13 +40,11 @@ export interface ExtensionVersionInfo {
     hubClientName: string;
 }
 
-type CSHubAuthMode = "anonymous" | "password" | "certificate";
-
 export interface CSHubConfig {
     address?: string;
     cacert?: string;
     timeout?: number;
-    auth?: CSHubAuthMode;
+    auth?: CSHubAuthenticationMethod;
     hubuser?: string;
     hubpwfile?: string;
     hubcert?: string;
@@ -171,14 +172,14 @@ export class CSConfigIO {
             return undefined;
         }
         const authString: string|undefined = wsConfig.get<string>(CONFIG_HUB_AUTH);
-        let authMode: CSHubAuthMode|undefined;
+        let authMethod: CSHubAuthenticationMethod|undefined;
         if (authString && (
                    authString === "anonymous"
                 || authString === "password"
                 || authString === "certificate"
             ))
         {
-            authMode = undefined;
+            authMethod = authString;
         }
         let timeoutSeconds: number|undefined = wsConfig.get<number|null>(CONFIG_HUB_TIMEOUT) ?? undefined;
         let timeoutMilliseconds: number|undefined;
@@ -194,7 +195,7 @@ export class CSConfigIO {
                 address: hubAddress,
                 cacert: wsConfig.get<string>(CONFIG_HUB_CACERT) || undefined,
                 timeout: timeoutMilliseconds,
-                auth: authMode,
+                auth: authMethod,
                 hubuser: wsConfig.get<string>(CONFIG_HUB_USER) || undefined,
                 hubpwfile: wsConfig.get<string>(CONFIG_HUB_PWFILE) || undefined,
                 hubcert: wsConfig.get<string>(CONFIG_HUB_CERT) || undefined,
