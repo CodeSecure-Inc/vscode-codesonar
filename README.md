@@ -1,6 +1,6 @@
 # CodeSonar Extension for Visual Studio Code
 
-This extension from [GrammaTech](https://grammatech.com/codesonar) is provides access to static code analysis results from a *CodeSonar* hub inside Visual Studio Code.
+This extension from [GrammaTech](https://grammatech.com/codesonar) provides access to static code analysis results from a *CodeSonar* hub inside Visual Studio Code.
 
 **Requirements**
 - Access to a [CodeSonar](https://www.grammatech.com/codesonar-cc) hub of version `7.1p0`.
@@ -76,7 +76,7 @@ Now, we want to run an initial analysis. We need to create a command that will i
 
 `<Install Dir>/codesonar/bin/codesonar analyze <Project File> -project <Project> -auth <Authentication Mode> -hubuser <Hub User> -name <Analysis Name> <Hub Address> make`
 
-Replacing the variables with actual data for your environment. An example command for a first analysis:
+Replace the variables with actual data for your environment. An example command for a first analysis:
 
 ```shell
 $ /home/shoresy/opt/codesonar-7.1p0/codesonar/bin/codesonar analyze /home/shoresy/Projects/Basic -auth password -hubuser shoresy -project /Basic -name Baseline https://partnerdemo.codesonar.com:7340 make
@@ -91,19 +91,19 @@ Open the Setting dialog by typing `CRTL`-`,`. To make the next few steps easier,
 <img src="resources/img/filter.png" alt="Filter extension settings example" height="">
 
 ### Where is CodeSonar installed
-To run an anlysis, you need access to a local install of CodeSonar. Define the root of your installation in **InstallDir**. 
-<img src="resources/img/installdir.png" alt="CodeSonar install location setting example" height="">
+To run an analysis, you need access to a local install of CodeSonar. Define the root of your installation in **InstallDir**. 
+<img src="resources/img/installdir.png" alt="Settings: codesonar.installDir" height="">
 
 ## Where is your hub
 You need to define the URL of the hub you want to interact with. In this example, the hub is a remote server. Enter the address of *your* hub in **Hub Address**.
-<img src="resources/img/huburl.png" alt="Hub URL setting example" height="">
+<img src="resources/img/huburl.png" alt="Settings: codesonar.hubAddress" height="">
 
 ## Define how you provide credentials
 In order to interact with a hub, you usually need to provide credentials. You have to instruct the extension how to authenticate with the hub by selecting an option in **Authentication Mode**.
-<img src="resources/img/logintype.png" alt="Hub login setting example" height="">
+<img src="resources/img/logintype.png" alt="Settings: codesonar.authenticationMode" height="">
 
 In this example, we will login to the hub with a user name and password so we enter a valid username on **Hub User**. For this tutorial, we are fine being prompted for a password, so we leave the **Hub Password File** field blank. 
-<img src="resources/img/credentials.png" alt="Hub username setting example" height="">
+<img src="resources/img/credentials.png" alt="Settings: codesonar.hubUser" height="">
 
 ## Step 4: Download an Analysis
 You can request the results of a scan from a hub you have login privileges on. Type `CTRL`-`Shift`-`P` to open the command pallette, and then select `CodeSonar: Download SARIF: Entire Analysis`
@@ -177,14 +177,10 @@ Open the command pallette and type `CodeSonar:`, then select the `CodeSonar:Down
 
 <img src="resources/img/getnewwarnings.png" alt="Get new warnings example" height="">
 
-The extension will request the newer warnings in your last analyssi compared with your baseline. If you did not specify a baseline in your **Settings**, the extension will prompt you for one.
+The extension will request the newer warnings in your last analysis compared with your baseline. If you did not specify a baseline in your **Settings**, the extension will prompt you for one.
 
 # Explore Some Additional Settings
 ## Compress the SARIF file during download
 You can save some bandwidth by requesting a SARIF file without whitespaces from the hub. This file will not be as easy for a human to read, but can reduce the size of the SARIF file by up to 50% which can speed up downloads for large projects. 
 
-<img src="resources/img/compactsarif.png" alt="Name the analysis example" height="">
-
-## License
-[MIT](License.txt)
-
+<img src="resources/img/compactsarif.png" alt="Settings: codesonar.sarifWhitespaceFormat" height="">
