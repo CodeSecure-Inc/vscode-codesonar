@@ -17,7 +17,8 @@ import {
     Uri,
 } from 'vscode';
 
-import { 
+import {
+    delay,
     replaceInvalidFileNameChars,
     CancellationSignal,
     OperationCancelledError,
@@ -385,36 +386,85 @@ async function executeCodeSonarSarifDownload(
     let analysisInfo: CSAnalysisInfo|undefined;
     let baseAnalysisInfo: CSAnalysisInfo|undefined;
     if (analysisInfoArray && analysisInfoArray.length) {
+        const UI_DELAY: number = 500;  // milliseconds to wait between prompts
+        let analysisQuickPickDelay: number|undefined;
+        let targetAnalysisInfoArray: CSAnalysisInfo[]|undefined = analysisInfoArray;
+        if (projectFile !== undefined) {
+            let analysisId: CSAnalysisId|undefined = await getAnalysisIdFromProjectFile(projectFile);
+            if (analysisId !== undefined) {
+                analysisInfo = analysisInfoArray.find(a => (a.id === analysisId));
+            }
+            if (analysisInfo === undefined && analysisId !== undefined) {
+                // Use the prj file name as the default analysis name here,
+                //  ultimately this will become the default name for the SARIF file:
+                let analysisName: string = projectFile.baseName;
+                analysisInfo = {
+                    id: analysisId,
+                    name: analysisName,
+                };
+            }
+            if (analysisInfo !== undefined) {
+                targetAnalysisInfoArray = undefined;
+            }
+        }
+        let baselineAnalysisInfoArray: CSAnalysisInfo[]|undefined;
+        if (withAnalysisBaseline) {
+            baselineAnalysisInfoArray = analysisInfoArray;
+        }
+        if (baselineAnalysisInfoArray !== undefined && analysisInfo !== undefined) {
+            // remove the "new" analysis from the list of possible baseline analyses:
+            baselineAnalysisInfoArray = [];
+            for (let analysisInfo2 of analysisInfoArray) {
+                if (analysisInfo2.id !== analysisInfo.id) {
+                    baselineAnalysisInfoArray.push(analysisInfo2);
+                }
+            }
+        }
         // TODO: remember the analysis ID for the baseline analysis,
         //  so that we don't need to look it up in future invocations of the download command.
-        if (!withAnalysisBaseline) {
+        if (baselineAnalysisInfoArray === undefined) {
             // We won't need to find a baseline analysis.
             // pass;
-        }
-        // If there is only one available analysis on the hub,
-        //  then we won't be able to compare two analyses.
-        else if (analysisInfoArray.length === 1) {
-            throw new Error("Not enough analyses were found on the hub to do a baseline comparison.");
         }
         else if (baseAnalysisId !== undefined) {
             baseAnalysisInfo = analysisInfoArray.find(a => (a.id === baseAnalysisId));
             if (baseAnalysisInfo === undefined) {
-                throw new Error("Baseline analysis was not found");
+                throw new Error(`Baseline analysis ${baseAnalysisId} was not found`);
             }
         }
         else if (baseAnalysisName) { // could be empty string or undefined
             baseAnalysisInfo = analysisInfoArray.find(a => (a.name === baseAnalysisName));
             if (baseAnalysisInfo === undefined) {
-                throw new Error("Baseline analysis was not found");
+                throw new Error(`Baseline analysis '${baseAnalysisName}' was not found`);
             }
         }
+        else if (baselineAnalysisInfoArray.length === 0) {
+            // This case might happen if we previously excluded the prj_files analysis from the baseline list.
+            throw new Error("Not enough analyses were found on the hub to do a baseline comparison.");
+        }
+        else if (baselineAnalysisInfoArray.length === 1 && analysisInfo === undefined) {
+            // If there is only one available analysis on the hub,
+            //  then we won't be able to compare two analyses.
+            throw new Error("Not enough analyses were found on the hub to do a baseline comparison.");
+        }
         else {
-            baseAnalysisInfo = await showAnalysisQuickPick(analysisInfoArray, "Select a Baseline Analysis...");
+            baseAnalysisInfo = await showAnalysisQuickPick(
+                    baselineAnalysisInfoArray,
+                    "Select a Baseline Analysis...",
+                );
+            if (baseAnalysisInfo === undefined) {
+                // Setting this to undefined is our signal that the user wants to cancel:
+                targetAnalysisInfoArray = undefined;
+            }
+            else {
+                analysisQuickPickDelay = UI_DELAY;
+            }
             // TODO: show some user feedback to indicate that baseline was chosen,
             //  the two identical quickpicks shown one after another is going to be confusing.
         }
-        let targetAnalysisInfoArray: CSAnalysisInfo[] = analysisInfoArray;
-        if (baseAnalysisInfo !== undefined) {
+        if (baseAnalysisInfo !== undefined && analysisInfo === undefined) {
+            // We will probably need to ask the user to pick the "new" analysis,
+            //  exclude the baseline from the list of choices:
             targetAnalysisInfoArray = [];
             for (let analysisInfo2 of analysisInfoArray) {
                 if (analysisInfo2.id !== baseAnalysisInfo.id) {
@@ -422,31 +472,21 @@ async function executeCodeSonarSarifDownload(
                 }
             }
         }
-        // Prompt if we didn't need a baseline,
-        //  or if we needed a baseline and we have one.
-        // If we need a baseline and we don't have one,
-        //  then the user must have cancelled,
-        //  so don't annoy them with another prompt.
-        if (targetAnalysisInfoArray.length < 1) {
-            // We check that some analyses were found prior to getting here,
-            //  and we check that there are many analyses prior to filtering out the baseline analysis,
-            //  so we should never hit this case:
-            assert.fail("Analyses were expected, but none were found");
-        }
-        else if (!withAnalysisBaseline || baseAnalysisInfo !== undefined) {
-            if (projectFile !== undefined) {
-                const analysisId: CSAnalysisId = await getAnalysisIdFromProjectFile(projectFile);
-                // Use the prj file name as the analysis name here,
-                //  ultimately this will become the default name for the SARIF file:
-                const analysisName: string = projectFile.baseName;
-                analysisInfo = {
-                    id: analysisId,
-                    name: analysisName,
-                };
+        if (analysisInfo === undefined && targetAnalysisInfoArray !== undefined) {
+            if (targetAnalysisInfoArray.length < 1) {
+                // We check that some analyses were found prior to getting here,
+                //  and we check that there are many analyses prior to filtering out the baseline analysis,
+                //  so we should never hit this case:
+                assert.fail("Analyses were expected, but none were found");
             }
-            if (analysisInfo === undefined) {
-                analysisInfo = await showAnalysisQuickPick(targetAnalysisInfoArray, "Select an Analysis...");
+            if (analysisQuickPickDelay) {
+                // A short delay so that the two quick-pick prompts back-to-back
+                //  will be less confusing to the user.
+                //  If they appear too quickly in succession,
+                //   it may seem like the first quickPick did not accept your input.
+                await delay(analysisQuickPickDelay);
             }
+            analysisInfo = await showAnalysisQuickPick(targetAnalysisInfoArray, "Select an Analysis...");
         }
     }
     let destinationUri: Uri|undefined;
@@ -763,10 +803,10 @@ async function showQuickPick<T>(
 }
 
 /** Try to get the analysis ID from the .prj_files dir. */
-async function getAnalysisIdFromProjectFile(projectFile: CSProjectFile): Promise<CSAnalysisId> {
-    const analysisIdString: string = await projectFile.readAnalysisIdString();
+async function getAnalysisIdFromProjectFile(projectFile: CSProjectFile): Promise<CSAnalysisId|undefined> {
+    const analysisIdString: string|undefined = await projectFile.readAnalysisIdString();
     // Exploit the fact CSAnalysisId is a string:
-    const analysisId: CSAnalysisId = analysisIdString;
+    const analysisId: CSAnalysisId|undefined = analysisIdString;
     return analysisId;
 }
 
