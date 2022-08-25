@@ -41,3 +41,15 @@ export function replaceInvalidFileNameChars(s: string, replacement: string = '_'
     return s2;
 }
 
+/** setTimeout promise. */
+export function delay(milliseconds: number): Promise<void> {
+    return new Promise<void>((
+        resolve: () => void,
+        reject: (e: unknown) => void,
+    ): void => {
+        setTimeout((): void => {
+            resolve();
+        },
+        milliseconds);
+    });
+}

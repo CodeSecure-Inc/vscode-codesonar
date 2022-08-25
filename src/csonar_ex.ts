@@ -1,8 +1,10 @@
 /** Utilities for codesonar integration. */
-
-import { readFile } from 'fs/promises';
 import * as path from 'path';
 
+import { 
+    fileExists,
+    readFileText,
+}  from './fs_ex';
 import { PKCSFile } from './pkcs';
 
 
@@ -38,14 +40,19 @@ export class CSProjectFile {
     }
 
     /** Read the analysis ID from the project directory. */
-    public async readAnalysisIdString(): Promise<string> {
+    public async readAnalysisIdString(): Promise<string|undefined> {
         const aidFilePath: string = path.join(this.prjDirPath, AID_FILE_NAME);
-        let data: string = await readFile(aidFilePath, { encoding: "utf-8" });
-        data = data.trim();
-        if (data.length < 1) {
-            throw new Error("Empty aid file");
+        const aidFileExists: boolean = await fileExists(aidFilePath);
+        let analysisId: string|undefined;
+        if (aidFileExists) {
+            let data: string = await readFileText(aidFilePath);
+            data = data.trim();
+            if (data.length < 1) {
+                throw new Error("Empty aid file");
+            } 
+            analysisId = data;   
         }
-        return data;  
+        return analysisId;  
     }
 }
 
@@ -130,12 +137,11 @@ export class CSHubUserKey {
      *  Subsequent invocations will not attempt to reload file data.
     */
     public async load(): Promise<CSHubUserKey> {
-        const encoding: "utf-8" = "utf-8";
         if (this.cert === undefined) {
-            this.cert = await readFile(this.certFilePath, { encoding: encoding });
+            this.cert = await readFileText(this.certFilePath);
         }
         if (this.key === undefined) {
-            this.key = await readFile(this.keyFilePath, { encoding: encoding });
+            this.key = await readFileText(this.keyFilePath);
             this._inspectKey(this.key);
         }
 
