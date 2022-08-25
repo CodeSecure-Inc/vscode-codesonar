@@ -88,27 +88,27 @@ Your command line will be be different, depending on where you have CodeSonar in
 We are going to store the information from the command line you just tested so we can use it later. The extension has several options, and explaining them all is beyond the scope of this README, but we will use the most important options to get started.
 
 Open the Setting dialog by typing `CRTL`-`,`. To make the next few steps easier, filter on the CodeSonar extension settings by typing `codesonar` in the **Search settings** widget.
-<img src="./images/filter.png" alt="Filter extension settings example" height="">
+<img src="resources/img/filter.png" alt="Filter extension settings example" height="">
 
 ### Where is CodeSonar installed
 To run an anlysis, you need access to a local install of CodeSonar. Define the root of your installation in **InstallDir**. 
-<img src="./images/installdir.png" alt="CodeSonar install location setting example" height="">
+<img src="resources/img/installdir.png" alt="CodeSonar install location setting example" height="">
 
 ## Where is your hub
 You need to define the URL of the hub you want to interact with. In this example, the hub is a remote server. Enter the address of *your* hub in **Hub Address**.
-<img src="./images/huburl.png" alt="Hub URL setting example" height="">
+<img src="resources/img/huburl.png" alt="Hub URL setting example" height="">
 
 ## Define how you provide credentials
 In order to interact with a hub, you usually need to provide credentials. You have to instruct the extension how to authenticate with the hub by selecting an option in **Authentication Mode**.
-<img src="./images/logintype.png" alt="Hub login setting example" height="">
+<img src="resources/img/logintype.png" alt="Hub login setting example" height="">
 
 In this example, we will login to the hub with a user name and password so we enter a valid username on **Hub User**. For this tutorial, we are fine being prompted for a password, so we leave the **Hub Password File** field blank. 
-<img src="./images/credentials.png" alt="Hub username setting example" height="">
+<img src="resources/img/credentials.png" alt="Hub username setting example" height="">
 
 ## Step 4: Download an Analysis
 You can request the results of a scan from a hub you have login privileges on. Type `CTRL`-`Shift`-`P` to open the command pallette, and then select `CodeSonar: Download SARIF: Entire Analysis`
 
-<img src="./images/download.png" alt="Download analysis example" height="">
+<img src="resources/img/download.png" alt="Download analysis example" height="">
 
 You will be prompted to save the SARIF file on your local machine. You can save the file anywhere, but it can be easier to use a subdirectory in your source folder. Once saved, the file will be opened in the SARIF viewer and you can begin assessing warnings. 
 
@@ -155,11 +155,11 @@ $ nmake -f Makefile.mak clean
 ``` 
 in the terminal. Then, run the task by selecting the `Terminal`>`Run Task...` menu and selecting the `C/C++: CodeSonar analyze` task we defined.
 
-<img src="./images/runtask.png" alt="Run a defined task example" height="">
+<img src="resources/img/runtask.png" alt="Run a defined task example" height="">
 
 If you used the exact task we defined in step 5, you will be prompted for an analysis name. Since we already have a baseline, let's call this *Analysis-1*. You can pick any naming convention you like, or skip this prompt altogether when you modify your task going forward.
 
-<img src="./images/analysisnameprompt.png" alt="Name the analysis example" height="">
+<img src="resources/img/analysisnameprompt.png" alt="Name the analysis example" height="">
 
 This task will start a build in the terminal, and if you entered the data in the settings correctly, this should have the same result as typing the command manually. If not, check the warnings in the terminal and adjust your settings accordingly.
 
@@ -171,11 +171,11 @@ Now that you know the basic theory of operation, you can experiment with the set
 # Define a Baseline Analysis
 The CodeSonar extension for VSCode allows you to compare two analyses and download only newer warnings. This saves time and allows you to focus on what is important. To unlock this feature, you need to define a baseline analysis against which to compare. If you recall, we named our first analysis *Baseline*. We will enter that analysis name in the **Baseline Analysis**** setting, but you can select any full analysis in the project.
 
-<img src="./images/baseline.png" alt="Define a baseline analysis example" height="">
+<img src="resources/img/baseline.png" alt="Define a baseline analysis example" height="">
 
 Open the command pallette and type `CodeSonar:`, then select the `CodeSonar:Download SARIF;New Warnings` command. 
 
-<img src="./images/getnewwarnings.png" alt="Get new warnings example" height="">
+<img src="resources/img/getnewwarnings.png" alt="Get new warnings example" height="">
 
 The extension will request the newer warnings in your last analyssi compared with your baseline. If you did not specify a baseline in your **Settings**, the extension will prompt you for one.
 
@@ -183,7 +183,8 @@ The extension will request the newer warnings in your last analyssi compared wit
 ## Compress the SARIF file during download
 You can save some bandwidth by requesting a SARIF file without whitespaces from the hub. This file will not be as easy for a human to read, but can reduce the size of the SARIF file by up to 50% which can speed up downloads for large projects. 
 
-<img src="./images/compactsarif.png" alt="Name the analysis example" height="">
+<img src="resources/img/compactsarif.png" alt="Name the analysis example" height="">
 
 ## License
-[MIT](./License.txt)
+[MIT](License.txt)
+
