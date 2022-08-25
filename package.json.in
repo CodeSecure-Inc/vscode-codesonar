@@ -179,7 +179,7 @@
         "pretest": "npm run compile && npm run lint",
         "lint": "eslint src --ext ts",
         "test": "node ./out/test/runTest.js",
-        "vsix": "vsce package"
+        "vsix": "vsce package --baseImagesUrl '$(CSO_VSCODE_PUBLIC_DOC_URL_BASE)' --baseContentUrl '$(CSO_VSCODE_PUBLIC_DOC_URL_BASE)'"
     },
     "devDependencies": {
         "@types/vscode": "^1.67.0",
