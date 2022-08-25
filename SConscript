@@ -9,6 +9,9 @@ csonar_vscode_pkg_name = 'vscode-codesonar'
 csonar_vscode_version_str = env['CSONAR_VSCODE_VERSION']
 csonar_vscode_protocol_num = env['CSONAR_VSCODE_HUB_PROTOCOL_VERSION']
 
+# TODO: replace with finalized URL:
+CSO_VSCODE_PUBLIC_DOC_URL_BASE = 'https://support-resources.grammatech.com/integrations/vscode/documentation/v1/'
+
 
 def file_content_sub(outfile, infile, repls):
     """ Substitute a dict of token name,value pairs from a source file to a target file. """
@@ -56,15 +59,22 @@ extension_version_ts = env.Command(
 def update_npm_package_json(target, source, env):
     """ Replace plugin package name and version number in package.json """
     package_json_target = target[0]
-    package_json_source, package_name_source, version_str_source = source
+    (
+        package_json_source,
+        package_name_source,
+        version_str_source,
+        doc_url_base_source,
+    ) = source
     package_name = package_name_source.get_text_contents()
     version_string = version_str_source.get_text_contents()
+    doc_url_base = doc_url_base_source.get_text_contents()
     file_content_sub(
         package_json_target.abspath,
         package_json_source.abspath,
         {
             '$(CSO_VSCODE_PACKAGE_NAME)': package_name,
             '$(CSO_VSCODE_VERSION)': version_string,
+            '$(CSO_VSCODE_PUBLIC_DOC_URL_BASE)': doc_url_base,
         })
 
 def update_package_json_action_formatter(target, source, env):
@@ -79,6 +89,7 @@ npm_package_json = env.Command(
         'package.json.in',
         Value(csonar_vscode_pkg_name),
         Value(csonar_vscode_version_str),
+        Value(CSO_VSCODE_PUBLIC_DOC_URL_BASE),
     ],
     env.Action(
         update_npm_package_json,
