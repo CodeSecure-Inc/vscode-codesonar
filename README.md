@@ -1,39 +1,189 @@
 # CodeSonar Extension for Visual Studio Code
 
-Provides access to CodeSonar static analysis results from within the VS Code IDE.
+This extension from [GrammaTech](https://grammatech.com/codesonar) is provides access to static code analysis results from a *CodeSonar* hub inside Visual Studio Code.
 
-## Features
+**Requirements**
+- Access to a [CodeSonar](https://www.grammatech.com/codesonar-cc) hub of version `7.1p0`.
+- The latest version of the CodeSonar extension requires at least VSCode `1.70.1`.
+- A functioning build envronment.
+- The [Sarif Viewer](https://marketplace.visualstudio.com/items?itemName=MS-SarifVSCode.sarif-viewer) extension from Microsoft.
 
-Download analysis results in SARIF format from your CodeSonar hub.  Use "Sarif Viewer" extension from Microsoft to view analysis results in the VS Code editor.
+# Getting Started
+VSCode is an editor; it does not ship with a built-in compiler or build tools. Before starting, you should ensure you have CodeSonar, build tools such as *make*, and a compiler, like *gcc*, installed and available in the PATH. 
 
-Provides the following commands:
+**Note**: The instructions in this README assume a single user working on a project. People working in teams will have to adapt the instructions for things like **Settings** and **Tasks** when you deploy this for multiple engineers.
 
-* `CodeSonar: Download SARIF: Entire Analysis`: 
-  Download CodeSonar analysis results in SARIF format.
-  All warning results for a single CodeSonar analysis will be downloaded.
-* `CodeSonar: Download SARIF: New Warnings`:
-  Download CodeSonar analysis results in SARIF format.
-  Warnings which are present in a "new" analysis and which are not present in a "baseline" analysis will be downloaded.
-* `CodeSonar: Clear hub user password`:
-  Remove user's hub password from VS Code's password store.
+## Step 1: Create a New Project
+First, we need some code to scan. Create a new folder and add a file named `Basic.c` to it. Copy the following code snippet to the file:
+```c
+int main()
+{
+    char buf[10];
+    char *q;
 
-CodeSonar hub authentication information and other preferences are managed in the VS Code settings.
+    /* Straightforward null dereference */
+    q = NULL;
+    buf[0] = q[0];
 
-## Requirements
+    /* You should check the malloc return value and there is a leak */
+    q = (char *) malloc(10 * sizeof(char));
+    q[0] = 'C';
+    q[1] = 'S';
+    q[2] = 'O';
 
-* The "Sarif Viewer" VS Code extension from Microsoft.
-* Access to a CodeSonar hub running CodeSonar 7.1 or later.
+    return 0;    
+}
+```
+Now, we need a makefile to help us build the project. The instructions are slightly different, depending on your installed compiler and operating system, and you are encouraged to modify them as needed.
 
-## Extension Settings
+### Linux
+Add a file named `Makefile` to your project and copy the following snippet to it:
+``` make
+CC = gcc
 
-Many "CodeSonar" extension settings are provided in order to customize hub communication and to facilitate CodeSonar analysis from a VS Code task.
+all: Basic
 
-## Known Issues
+Basic: Basic.c
+	$(CC) -o $@ $?
 
-* An error will not be displayed if user enters incorrect passphrase when authenticating with a protected hub key.
+clean:
+	rm -f *.o *~ core Basic
+```
+### Windows
+Add a file named `Basic.mak` to your project and add the following snippet to it:
+``` make
+CC = cl
 
-## Release Notes
+all = Basic.exe
 
-### 1.0.0
+Basic.exe: Basic.c
+	$(CC) Basic.c /link /out:Basic.exe
 
-Initial release.  Compatible with CodeSonar 7.1.
+clean:
+	del /q *.obj *~ Basic.exe
+```
+If you are using a compiler other than `gcc` or `cl`, you should change the CC macro on line 1 to call the your compiler.
+
+### Make Sure it all Works
+We will add tasks to automate our project later, but for now, make sure the project builds. If you have not already done so, open a terminal from the `Terminal > New Terminal` menu. 
+
+On a Linux system, type `make all` in the terminal. On Windows, type `nmake -f Basic.mak`. If the project builds, your environment is properly configured and you can move on to step 2. 
+
+Unfortunately, diagnosing build failures is outside the scope of this README. Many problems can be resolved by making sure tools are actually installed and the PATH environment variable is properly set.
+
+## Step 2: Run an Analysis
+Now, we want to run an initial analysis. We need to create a command that will instruct CodeSonar to analyze a build and send the results to a hub. The format of the command is:
+
+`<Install Dir>/codesonar/bin/codesonar analyze <Project File> -project <Project> -auth <Authentication Mode> -hubuser <Hub User> -name <Analysis Name> <Hub Address> make`
+
+Replacing the variables with actual data for your environment. An example command for a first analysis:
+
+```shell
+$ /home/shoresy/opt/codesonar-7.1p0/codesonar/bin/codesonar analyze /home/shoresy/Projects/Basic -auth password -hubuser shoresy -project /Basic -name Baseline https://partnerdemo.codesonar.com:7340 make
+```
+
+Your command line will be be different, depending on where you have CodeSonar installed, how you login to your hub, and where you intend to store project information.
+
+## Step 3: Save that Information in Settings
+We are going to store the information from the command line you just tested so we can use it later. The extension has several options, and explaining them all is beyond the scope of this README, but we will use the most important options to get started.
+
+Open the Setting dialog by typing `CRTL`-`,`. To make the next few steps easier, filter on the CodeSonar extension settings by typing `codesonar` in the **Search settings** widget.
+<img src="./images/filter.png" alt="Filter extension settings example" height="">
+
+### Where is CodeSonar installed
+To run an anlysis, you need access to a local install of CodeSonar. Define the root of your installation in **InstallDir**. 
+<img src="./images/installdir.png" alt="CodeSonar install location setting example" height="">
+
+## Where is your hub
+You need to define the URL of the hub you want to interact with. In this example, the hub is a remote server. Enter the address of *your* hub in **Hub Address**.
+<img src="./images/huburl.png" alt="Hub URL setting example" height="">
+
+## Define how you provide credentials
+In order to interact with a hub, you usually need to provide credentials. You have to instruct the extension how to authenticate with the hub by selecting an option in **Authentication Mode**.
+<img src="./images/logintype.png" alt="Hub login setting example" height="">
+
+In this example, we will login to the hub with a user name and password so we enter a valid username on **Hub User**. For this tutorial, we are fine being prompted for a password, so we leave the **Hub Password File** field blank. 
+<img src="./images/credentials.png" alt="Hub username setting example" height="">
+
+## Step 4: Download an Analysis
+You can request the results of a scan from a hub you have login privileges on. Type `CTRL`-`Shift`-`P` to open the command pallette, and then select `CodeSonar: Download SARIF: Entire Analysis`
+
+<img src="./images/download.png" alt="Download analysis example" height="">
+
+You will be prompted to save the SARIF file on your local machine. You can save the file anywhere, but it can be easier to use a subdirectory in your source folder. Once saved, the file will be opened in the SARIF viewer and you can begin assessing warnings. 
+
+## Step 5: Acheieve Repeatable Analyses with a Task
+If you want to have CodeSonar analyze your code as a VSCode *Task*, you can start from this one and customize to your specific needs:
+ 
+### On-prem hub
+```json
+"inputs": [
+  {
+    "id": "codesonarAnalysisName",
+    "type": "promptString",
+    "description": "CodeSonar analysis name (no spaces allowed in name)",
+    "default": "Analysis-1234"
+  }
+],
+"tasks": [
+  {
+    "type": "shell",
+    "label": "C/C++: CodeSonar analyze",
+    "command": "${config:codesonar.installDir}${pathSeparator}codesonar${pathSeparator}bin${pathSeparator}codesonar",
+    "args": [
+      "analyze",
+      "${config:codesonar.projectFile}",
+      "-auth", "password",
+      "-hubuser", "${config:codesonar.hubUser}",
+      "-project", "${config:codesonar.project}",
+      "-name", "${input:codesonarAnalysisName}",
+      "${config:codesonar.hubAddress}",
+      "make", "all"
+    ],
+    "group": "build",
+    "detail": "builder: make"
+  }
+]
+```
+Now we want to test the task. Type 
+``` shell
+$ make clean
+``` 
+or 
+``` shell
+$ nmake -f Makefile.mak clean
+``` 
+in the terminal. Then, run the task by selecting the `Terminal`>`Run Task...` menu and selecting the `C/C++: CodeSonar analyze` task we defined.
+
+<img src="./images/runtask.png" alt="Run a defined task example" height="">
+
+If you used the exact task we defined in step 5, you will be prompted for an analysis name. Since we already have a baseline, let's call this *Analysis-1*. You can pick any naming convention you like, or skip this prompt altogether when you modify your task going forward.
+
+<img src="./images/analysisnameprompt.png" alt="Name the analysis example" height="">
+
+This task will start a build in the terminal, and if you entered the data in the settings correctly, this should have the same result as typing the command manually. If not, check the warnings in the terminal and adjust your settings accordingly.
+
+Once the analysis completes successfully, you can download it from the hub as we did in **Step 4**.
+
+## Step 6: Experiment
+Now that you know the basic theory of operation, you can experiment with the setings, create your own tasks, modify the code to fix errors or introduce new one, and apply this to a full project.
+
+# Define a Baseline Analysis
+The CodeSonar extension for VSCode allows you to compare two analyses and download only newer warnings. This saves time and allows you to focus on what is important. To unlock this feature, you need to define a baseline analysis against which to compare. If you recall, we named our first analysis *Baseline*. We will enter that analysis name in the **Baseline Analysis**** setting, but you can select any full analysis in the project.
+
+<img src="./images/baseline.png" alt="Define a baseline analysis example" height="">
+
+Open the command pallette and type `CodeSonar:`, then select the `CodeSonar:Download SARIF;New Warnings` command. 
+
+<img src="./images/getnewwarnings.png" alt="Get new warnings example" height="">
+
+The extension will request the newer warnings in your last analyssi compared with your baseline. If you did not specify a baseline in your **Settings**, the extension will prompt you for one.
+
+# Explore Some Additional Settings
+## Compress the SARIF file during download
+You can save some bandwidth by requesting a SARIF file without whitespaces from the hub. This file will not be as easy for a human to read, but can reduce the size of the SARIF file by up to 50% which can speed up downloads for large projects. 
+
+<img src="./images/compactsarif.png" alt="Name the analysis example" height="">
+
+## License
+[MIT](./License.txt)
