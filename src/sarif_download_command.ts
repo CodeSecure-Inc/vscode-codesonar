@@ -334,7 +334,13 @@ async function executeCodeSonarSarifDownload(
                     || ecode === SELF_SIGNED_CERT_IN_CHAIN_CODE
             ) {
                 certificateNotTrustedError = e2;
-            } else {
+            }
+            else if (e instanceof OperationCancelledError) {
+                // Don't wrap this error with a sign-in error;
+                //  we want the caller to see that this was a cancellation error.
+                throw e;
+            }
+            else {
                 throw e2;
             }
         }
