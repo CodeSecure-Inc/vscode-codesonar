@@ -28,9 +28,13 @@ export function activate(context: ExtensionContext) {
             message: defaultMessage, 
         });
         if (e instanceof OperationCancelledError) {
-            window.showInformationMessage(errorMessage);
+            logger.info(errorMessage);
+            if (verboseErrors) {
+                window.showInformationMessage(errorMessage);
+            }
         }
         else {
+            logger.error(errorMessage);
             window.showErrorMessage(errorMessage);
         }
     };
