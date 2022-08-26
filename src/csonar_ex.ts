@@ -120,7 +120,7 @@ export class CSHubUserKey {
     public keyFilePath: string;
     public cert: string|undefined;
     public key: string|undefined;
-    public keyIsProtected: boolean|undefined;
+    private _keyIsProtected: boolean|undefined;
 
     constructor(
         certFilePath: string,
@@ -128,7 +128,11 @@ export class CSHubUserKey {
     ) {
         this.certFilePath = certFilePath;
         this.keyFilePath = keyFilePath;
-        this.keyIsProtected = undefined;
+        this._keyIsProtected = undefined;
+    }
+
+    public get keyIsProtected(): boolean|undefined {
+        return this._keyIsProtected;
     }
 
     /** Load certificates by reading files.
@@ -142,13 +146,13 @@ export class CSHubUserKey {
         }
         if (this.key === undefined) {
             this.key = await readFileText(this.keyFilePath);
-            this._inspectKey(this.key);
+            this.inspectKey(this.key);
         }
 
         return this;
     }
 
-    _inspectKey(key: string): void {
+    private inspectKey(key: string): void {
         const keyFile: PKCSFile = new PKCSFile();
         keyFile.parseText(key);
         for (let item of keyFile.items) {
@@ -156,13 +160,13 @@ export class CSHubUserKey {
                 throw new Error("Could not determine protection status of hub user key file");
             }
             else if (item.isPrivate === true && item.isProtected === true) {
-                this.keyIsProtected = true;
+                this._keyIsProtected = true;
             }
             else if (item.isPrivate === true
                     && item.isProtected === false
                     && this.keyIsProtected === undefined
             ) {
-                this.keyIsProtected = false;
+                this._keyIsProtected = false;
             }
         }
     }

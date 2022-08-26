@@ -329,11 +329,11 @@ async function executeCodeSonarSarifDownload(
             const messageBody: string = errorToString(e, { message: "Internal Error"});
             const errorMessage = `${messageHeader}: ${messageBody}`;
             const ecode: ErrorMessageCode|undefined = errorToMessageCode(e);
-            const e2: NodeJS.ErrnoException = new Error(errorMessage);
+            const signinError: Error = new Error(errorMessage);
             if (ecode === DEPTH_ZERO_SELF_SIGNED_CERT_CODE
                     || ecode === SELF_SIGNED_CERT_IN_CHAIN_CODE
             ) {
-                certificateNotTrustedError = e2;
+                certificateNotTrustedError = signinError;
             }
             else if (e instanceof OperationCancelledError) {
                 // Don't wrap this error with a sign-in error;
@@ -341,7 +341,7 @@ async function executeCodeSonarSarifDownload(
                 throw e;
             }
             else {
-                throw e2;
+                throw signinError;
             }
         }
         finally {
@@ -400,17 +400,16 @@ async function executeCodeSonarSarifDownload(
             if (analysisId !== undefined) {
                 analysisInfo = analysisInfoArray.find(a => (a.id === analysisId));
             }
-            if (analysisInfo === undefined && analysisId !== undefined) {
-                // Use the prj file name as the default analysis name here,
-                //  ultimately this will become the default name for the SARIF file:
-                let analysisName: string = projectFile.baseName;
-                analysisInfo = {
-                    id: analysisId,
-                    name: analysisName,
-                };
-            }
             if (analysisInfo !== undefined) {
+                // Setting targetAnalysisInfoArray to undefined is our signal
+                //  that we don't need to prompt the user to pick analysis:
                 targetAnalysisInfoArray = undefined;
+            }
+            else if (analysisId !== undefined) {
+                // We got an analysisId from prj_files,
+                //  but it does not correspond to a analysis in the list.
+                //  The user will need to pick an analysis later:
+                analysisId = undefined;
             }
         }
         let baselineAnalysisInfoArray: CSAnalysisInfo[]|undefined;
@@ -851,9 +850,7 @@ async function readSarifResultCount(
         if (sarifDoc && sarifDoc.runs) {
             for (let run of sarifDoc.runs) {
                 if (run && run.results) {
-                    for (let result of run.results) {
-                        resultCount += 1;
-                    }
+                    resultCount += run.results.length;
                 }
             }
         }
