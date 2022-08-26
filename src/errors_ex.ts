@@ -50,40 +50,40 @@ export function errorToMessageCode(e: unknown): ErrorMessageCode|undefined {
         message?: string,
     } = {}
 ): string {
-let errorMessage: string;
-if (e === undefined) {
-    errorMessage = '<UNDEFINED>';
-}
-else if (e === null) {
-    errorMessage = '<NULL>';
-}
-else if (typeof e === 'string') {
-    errorMessage = e;
-}
-else if (typeof e === 'number') {
-    errorMessage = e.toString();
-}
-else if (typeof e === 'object') {
-    if (e instanceof Error) {
-        // Error objects in NodeJS have a few extra properties, like 'code',
-        //  which the basic JavaScript Error type does not declare:
-        const ex: NodeJS.ErrnoException|undefined = asErrnoException(e);
-        errorMessage = e.message;
-        if (verbose) {
-            if (ex !== undefined && ex.code !== undefined) {
-                errorMessage = `${ex.code} ${errorMessage}`;
+    let errorMessage: string;
+    if (e === undefined) {
+        errorMessage = '<UNDEFINED>';
+    }
+    else if (e === null) {
+        errorMessage = '<NULL>';
+    }
+    else if (typeof e === 'string') {
+        errorMessage = e;
+    }
+    else if (typeof e === 'number') {
+        errorMessage = e.toString();
+    }
+    else if (typeof e === 'object') {
+        if (e instanceof Error) {
+            // Error objects in NodeJS have a few extra properties, like 'code',
+            //  which the basic JavaScript Error type does not declare:
+            const ex: NodeJS.ErrnoException|undefined = asErrnoException(e);
+            errorMessage = e.message;
+            if (verbose) {
+                if (ex !== undefined && ex.code !== undefined) {
+                    errorMessage = `${ex.code} ${errorMessage}`;
+                }
+                errorMessage = `${e.name}: ${errorMessage}`;
             }
-            errorMessage = `${e.name}: ${errorMessage}`;
+        }
+        else {
+            errorMessage = e.toString();
         }
     }
     else {
-        errorMessage = e.toString();
+        errorMessage = message ?? '';
     }
-}
-else {
-    errorMessage = message ?? '';
-}
 
-return errorMessage;
+    return errorMessage;
 }
 
