@@ -5,6 +5,10 @@ Import('env')
 
 VSIX_EXT = '.vsix'
 
+csonar_vscode_pkg_name = 'vscode-codesonar'
+csonar_vscode_version_str = env['CSONAR_VSCODE_VERSION']
+csonar_vscode_protocol_num = env['CSONAR_VSCODE_HUB_PROTOCOL_VERSION']
+
 
 # TODO: replace with finalized URL:
 CSO_VSCODE_PUBLIC_DOC_URL_BASE = 'https://support-resources.grammatech.com/integrations/vscode/documentation/v1/'
@@ -18,6 +22,39 @@ def file_content_sub(outfile, infile, repls):
         file_contents = file_contents.replace(sub, repl)
     with open(outfile, 'w') as out_io:
         out_io.write(file_contents)
+
+
+def update_extension_version_module(target, source, env):
+    """ Replace plugin package name and version number in package.json """
+    extension_version_target = target[0]
+    extension_version_source, version_string_source, protocol_number_source = source
+    version_string = version_string_source.get_text_contents()
+    protocol_number_string = protocol_number_source.get_text_contents()
+    file_content_sub(
+        extension_version_target.abspath,
+        extension_version_source.abspath,
+        {
+            '__CSONAR_VSCODE_VERSION__': version_string,
+            '__CSONAR_VSCODE_PROTOCOL_NUMBER__': protocol_number_string,
+        })
+
+def update_extension_version_module_action_formatter(target, source, env):
+    return 'cso_vscode_update_extension_version(%s, ...)' % target[0].path
+
+
+extension_version_ts = env.Command(
+    [
+        'src/extension_version.ts'
+    ],
+    [
+        'extension_version.ts.in',
+        Value(csonar_vscode_version_str),
+        Value(str(csonar_vscode_protocol_num)),
+    ],
+    env.Action(
+        update_extension_version_module,
+        update_extension_version_module_action_formatter),
+    )
 
 
 def update_npm_package_json(target, source, env):
@@ -44,9 +81,6 @@ def update_npm_package_json(target, source, env):
 def update_package_json_action_formatter(target, source, env):
     return 'cso_vscode_update_package_json(%s, ...)' % target[0].path
 
-
-csonar_vscode_pkg_name = 'vscode-codesonar'
-csonar_vscode_version_str = env['CSONAR_VSCODE_VERSION']
 
 npm_package_json = env.Command(
     [
@@ -91,15 +125,25 @@ cso_vscode_deps += [File(x) for x in [
     'tsconfig.json',
     '.vscodeignore',
 ]]
-cso_vscode_deps = sorted(cso_vscode_deps)
+cso_vscode_deps = sorted(cso_vscode_deps, key=(lambda f: str(f)))
 
-cso_vscode_project_source = env.GTFindFiles('src')
+cso_vscode_project_src_dir = Dir('src')
+cso_vscode_project_source = cso_vscode_project_src_dir.glob('*.ts')
+cso_vscode_project_source += extension_version_ts
 cso_vscode_project_source += [File(x) for x in [
-    "README.md",
-    "CHANGELOG.md",
-    "LICENSE.txt",
+    'README.md',
+    'CHANGELOG.md',
+    'LICENSE.txt',
 ]]
-cso_vscode_project_source = sorted(cso_vscode_project_source)
+# extension_version.ts is generated, but it may already exist in the src dir.
+#  Use a dictionary to remove duplicates, and sort to avoid scons -q complaints:
+cso_vscode_project_source_dict = { f.get_abspath():f for f in cso_vscode_project_source}
+# Sort using key, which is absolute file path string, but make a list out of file object values:
+cso_vscode_project_source = [item[1] 
+    for item in sorted(cso_vscode_project_source_dict.items(),
+                       key=(lambda item: item[0]))
+    ]
+
 
 csonar_vscode_extension_vsix_fname = f'{csonar_vscode_pkg_name}-{csonar_vscode_version_str}{VSIX_EXT}'
 

@@ -2,14 +2,45 @@
 import * as path from 'path';
 //import * as vscode from 'vscode';
 import {
+    CancellationToken,
+    Disposable,
     TextEditor,
     window,
     workspace,
     WorkspaceFolder,
 } from 'vscode';
 
+import {
+    CancellationSignal,
+    OperationCancelledError,
+} from './common_utils';
 
 export const VSCONFIG_FOLDER_NAME: string = ".vscode";
+
+
+/** Implement our CancellationSignal interface using VSCode CancellationToken. */
+export class VSCodeCancellationSignal implements CancellationSignal {
+    private _token: CancellationToken;
+    //private isCancellationRequested: boolean;
+
+    constructor(token: CancellationToken) {
+        this._token = token;
+        //this.isCancellationRequested = token.isCancellationRequested;
+    }
+
+    public get isCancellationRequested(): boolean {
+        return this._token.isCancellationRequested;
+    }
+
+    public onCancellationRequested(callback: () => void): (()=>void) {
+        const callbackDisposer: Disposable = this._token.onCancellationRequested(callback);
+        return () => { callbackDisposer.dispose(); };
+    }
+
+    public createCancellationError(message?: string) {
+        return new OperationCancelledError(message);
+    }
+}
 
 
 /** Find the workspace directory for the active editor */

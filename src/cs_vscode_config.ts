@@ -1,16 +1,18 @@
 /** Support for codesonar.json file. */
-import { Stats } from 'fs';
-import { mkdir, readFile, stat, writeFile } from 'fs/promises';
-import * as path from 'path';
-
 import { workspace, WorkspaceConfiguration } from 'vscode';
 
-import { errorToString } from './common_utils';
-import { Logger } from './logger';
-import { findVSConfigFilePath, findVSConfigFolderPath } from './vscode_ex';
+import {
+    CSHubAddress,
+    CSHubAuthenticationMethod,
+} from './csonar_ex';
 
-import { CSHubAddress } from './csonar_ex';
+import {
+    CSONAR_VSCODE_VERSION_STRING,
+    CSONAR_VSCODE_PROTOCOL_NUMBER,
+} from './extension_version';
 
+
+const CSHUB_CLIENT_NAME: string = "vscode";
 
 const CONFIG_SECTION: string = "codesonar";
 const CONFIG_HUB_ADDR: string = "hubAddress";
@@ -32,13 +34,17 @@ const SARIF_WHITESPACE_FORMAT_COMPACT: string = "compact";
 const SARIF_INDENT_LENGTH: number = 2;
 const SARIF_NO_INDENT_LENGTH: number = -1;
 
-type CSHubAuthMode = "anonymous" | "password" | "certificate";
+export interface ExtensionVersionInfo {
+    versionString: string;
+    hubProtocolNumber: number;
+    hubClientName: string;
+}
 
 export interface CSHubConfig {
     address?: string;
     cacert?: string;
     timeout?: number;
-    auth?: CSHubAuthMode;
+    auth?: CSHubAuthenticationMethod;
     hubuser?: string;
     hubpwfile?: string;
     hubcert?: string;
@@ -88,6 +94,7 @@ export function formatHubUserPasswordStorageKey(hubAddress: CSHubAddress, hubUse
 /** Provides access to CodeSonar extension configuration settings. */
 export class CSConfigIO {
     private wsConfig: WorkspaceConfiguration;
+    public readonly extensionVersionInfo: ExtensionVersionInfo;
     public readonly defaultHubAddressString: string = "localhost:7340";
     /** A non-empty string that represents the hub's anonymous user. */
     public readonly anonymousUserName: string;
@@ -95,6 +102,11 @@ export class CSConfigIO {
     constructor() {
         this.anonymousUserName = "Anonymous";
         this.wsConfig = workspace.getConfiguration(CONFIG_SECTION);
+        this.extensionVersionInfo = {
+            versionString: CSONAR_VSCODE_VERSION_STRING,
+            hubProtocolNumber: CSONAR_VSCODE_PROTOCOL_NUMBER,
+            hubClientName: CSHUB_CLIENT_NAME,
+        };
     }
 
     /** Save hub address to config store. */
@@ -160,14 +172,14 @@ export class CSConfigIO {
             return undefined;
         }
         const authString: string|undefined = wsConfig.get<string>(CONFIG_HUB_AUTH);
-        let authMode: CSHubAuthMode|undefined;
+        let authMethod: CSHubAuthenticationMethod|undefined;
         if (authString && (
                    authString === "anonymous"
                 || authString === "password"
                 || authString === "certificate"
             ))
         {
-            authMode = undefined;
+            authMethod = authString;
         }
         let timeoutSeconds: number|undefined = wsConfig.get<number|null>(CONFIG_HUB_TIMEOUT) ?? undefined;
         let timeoutMilliseconds: number|undefined;
@@ -183,7 +195,7 @@ export class CSConfigIO {
                 address: hubAddress,
                 cacert: wsConfig.get<string>(CONFIG_HUB_CACERT) || undefined,
                 timeout: timeoutMilliseconds,
-                auth: authMode,
+                auth: authMethod,
                 hubuser: wsConfig.get<string>(CONFIG_HUB_USER) || undefined,
                 hubpwfile: wsConfig.get<string>(CONFIG_HUB_PWFILE) || undefined,
                 hubcert: wsConfig.get<string>(CONFIG_HUB_CERT) || undefined,

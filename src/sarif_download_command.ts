@@ -1,5 +1,8 @@
 import { strict as assert } from 'assert';
-import * as fs from 'fs';
+import {
+    createWriteStream as createFileWriteStream,
+    unlink as unlinkFile,
+} from 'fs';
 import * as path from 'path';
 import { Readable } from 'stream';
 
@@ -14,17 +17,35 @@ import {
     Uri,
 } from 'vscode';
 
-import { 
-    asErrnoException,
-    errorToString,
-    replaceInvalidFileNameChars,
-} from './common_utils';
-import { Logger } from './logger';
-import { 
-    findActiveVSWorkspaceFolderPath,
-} from './vscode_ex';
 import {
+    delay,
+    replaceInvalidFileNameChars,
+    CancellationSignal,
+    OperationCancelledError,
+} from './common_utils';
+import {
+    errorToMessageCode,
+    errorToString,
+    ErrorMessageCode,
+    DEPTH_ZERO_SELF_SIGNED_CERT_CODE,
+    SELF_SIGNED_CERT_IN_CHAIN_CODE,
+} from './errors_ex';
+import {
+    readFileInfo,
+    readFileText,
+    FileInfo,
+} from './fs_ex';
+import { Logger } from './logger';
+import { SarifLog, SarifRun } from './sarif';
+import {
+    findActiveVSWorkspaceFolderPath,
+    VSCodeCancellationSignal,
+} from './vscode_ex';
+
+import {
+    loadCSHubUserKey,
     CSHubAddress,
+    CSHubAuthenticationMethod,
     CSProjectFile,
 } from './csonar_ex';
 import * as csConfig from './cs_vscode_config';
@@ -37,6 +58,8 @@ import {
     CSAnalysisId,
     CSAnalysisInfo,
     CSHubSarifSearchOptions,
+    CSHubVersionCompatibilityInfo,
+    CSHubClientRequestOptions,
 } from './cs_hub_client';
 import * as sarifView from './sarif_viewer';
 
@@ -94,6 +117,7 @@ async function executeCodeSonarSarifDownload(
     };
     const projectConfig: csConfig.CSProjectConfig|undefined = await csConfigIO.readCSProjectConfig();
     const extensionOptions: csConfig.CSExtensionOptions = await csConfigIO.readCSEXtensionOptions();
+    const extensionVersionInfo: csConfig.ExtensionVersionInfo = csConfigIO.extensionVersionInfo;
     let projectPath: string|undefined;
     let projectId: CSProjectId|undefined;
     let baseAnalysisName: string|undefined;
@@ -102,6 +126,7 @@ async function executeCodeSonarSarifDownload(
     let hubAddressString: string|undefined;
     let hubCAFilePath: string|undefined;
     let hubSocketTimeout: number|undefined;
+    let hubAuthMethod: CSHubAuthenticationMethod|undefined;
     let hubUserName: string|undefined;
     let hubUserPasswordFilePath: string|undefined;
     let hubUserCertFilePath: string|undefined;
@@ -149,6 +174,7 @@ async function executeCodeSonarSarifDownload(
         hubAddressString = hubConfig.address;
         hubSocketTimeout = hubConfig.timeout;
         hubCAFilePath = hubConfig.cacert;
+        hubAuthMethod = hubConfig.auth;
         hubUserName = hubConfig.hubuser;
         hubUserPasswordFilePath = hubConfig.hubpwfile;
         hubUserCertFilePath = hubConfig.hubcert;
@@ -204,6 +230,9 @@ async function executeCodeSonarSarifDownload(
     if (hubSocketTimeout !== undefined) {
         hubClientOptions.timeout = hubSocketTimeout;
     }
+    if (hubAuthMethod) {
+        hubClientOptions.auth = hubAuthMethod;
+    }
     if (hubUserName) {
         hubClientOptions.hubuser = hubUserName;
     }
@@ -211,7 +240,7 @@ async function executeCodeSonarSarifDownload(
     if (hubAddressObject && hubUserName) {
         passwordStorageKey = formatHubUserPasswordStorageKey(hubAddressObject, hubUserName);
     }
-    if (hubUserCertFilePath) {
+    if (hubAddressString && hubUserCertFilePath) {
         // If cert file path is specified, but key file path is not,
         //  try to guess key file name:
         // This is a feature intended to make it less cumbersome to specify certificate authentication settings.
@@ -234,10 +263,22 @@ async function executeCodeSonarSarifDownload(
         }
         hubUserCertFilePath = resolveFilePath(hubUserCertFilePath);
         hubUserCertKeyFilePath = resolveFilePath(hubUserCertKeyFilePath);
-        hubClientOptions.hubcert = hubUserCertFilePath;
-        hubClientOptions.hubkey = hubUserCertKeyFilePath;
+        hubClientOptions.hubkey = await loadCSHubUserKey(hubUserCertFilePath, hubUserCertKeyFilePath);
+        if (hubClientOptions.hubkey.keyIsProtected) {
+            const captureHubAddressString: string = hubAddressString;
+            const captureHubUserCertFilePath: string = hubUserCertFilePath;
+            const captureHubUserCertKeyFilePath: string = hubUserCertKeyFilePath;
+            hubClientOptions.hubkeypasswd = (): Promise<string> => {
+                return requestHubUserKeyPassphrase(
+                        logger,
+                        captureHubAddressString,
+                        captureHubUserCertFilePath,
+                        captureHubUserCertKeyFilePath,
+                );
+            };
+        }
     }
-    else if (hubUserPasswordFilePath) {
+    if (hubUserPasswordFilePath) {
         hubUserPasswordFilePath = resolveFilePath(hubUserPasswordFilePath);
         hubClientOptions.hubpwfile = hubUserPasswordFilePath;
         // Don't keep password sitting around if user changed auth method:
@@ -249,47 +290,32 @@ async function executeCodeSonarSarifDownload(
             await secretStorage.delete(passwordStorageKey);
         }
     } else if (hubAddressString && hubUserName && passwordStorageKey) {
-        // Make type-checker happy by providing an unconditional string var:
-        const passwordStorageKeyString: string = passwordStorageKey;
-        const username: string = hubUserName;
-        const address: string = hubAddressString;
-        hubClientOptions.hubpasswd = () => new Promise<string>((resolve, reject) => {
-            secretStorage.get(passwordStorageKeyString).then((password) => {
-                if (password !== undefined) {
-                    logger.info("Found saved password");
-                    resolve(password);
-                }
-                else {
-                    window.showInputBox({
-                        password: true,
-                        prompt: `Enter password for CodeSonar hub user '${username}' at '${address}'`,
-                        placeHolder: 'password',
-                        ignoreFocusOut: true,
-                    }).then(
-                        (inputValue: string|undefined): void => {
-                            if (inputValue === undefined) {
-                                // TODO this error will be caught when we catch signin errors.
-                                //  we should detect and ignore the error in that case.
-                                reject(new Error("User cancelled password input"));
-                            }
-                            else {
-                                secretStorage.store(passwordStorageKeyString, inputValue).then(
-                                    (): void => {
-                                        resolve(inputValue);
-                                    },
-                                    reject,
-                                );
-                            }
-                        },
-                        reject);
-                }
-            });
-        }); 
+        const capturePasswordStorageKey: string = passwordStorageKey;
+        const captureHubAddresString: string = hubAddressString;
+        const captureHubUserName: string = hubUserName;
+        hubClientOptions.hubpasswd = () => {
+            return requestHubUserPassword(
+                    logger,
+                    secretStorage,
+                    capturePasswordStorageKey,
+                    captureHubAddresString,
+                    captureHubUserName,
+                    );
+        };
     }
     let certificateNotTrustedError: Error|undefined;
+    let hubCompatibilityInfo: CSHubVersionCompatibilityInfo|undefined;
     if (hubAddressObject !== undefined) {
         hubClient = new CSHubClient(hubAddressObject, hubClientOptions);
         hubClient.logger = logger;
+        hubCompatibilityInfo = await verifyHubCompatibility(hubClient, extensionVersionInfo);
+        if (hubCompatibilityInfo === undefined
+            && withAnalysisBaseline
+        ) {
+            // No compatibility info means hub is older than CodeSonar 7.1,
+            //  which also means hub is too old to support SARIF difference search:
+            throw new Error("CodeSonar hub version 7.1 or later is required for SARIF analysis comparison.");
+        }
         let signInSucceeded: boolean = false;
         try {
             const signInErrorMessage: string|undefined = await verifyHubCredentials(hubClient);
@@ -302,16 +328,20 @@ async function executeCodeSonarSarifDownload(
             const messageHeader: string = "CodeSonar hub sign-in failure";
             const messageBody: string = errorToString(e, { message: "Internal Error"});
             const errorMessage = `${messageHeader}: ${messageBody}`;
-            const e2: NodeJS.ErrnoException = new Error(errorMessage);
-            const ex: NodeJS.ErrnoException|undefined = asErrnoException(e);
-            const errorName: string|undefined = ex?.code;
-            e2.code = errorName;
-            if (errorName === 'DEPTH_ZERO_SELF_SIGNED_CERT'
-                    || errorName === 'SELF_SIGNED_CERT_IN_CHAIN'
+            const ecode: ErrorMessageCode|undefined = errorToMessageCode(e);
+            const signinError: Error = new Error(errorMessage);
+            if (ecode === DEPTH_ZERO_SELF_SIGNED_CERT_CODE
+                    || ecode === SELF_SIGNED_CERT_IN_CHAIN_CODE
             ) {
-                certificateNotTrustedError = e2;
-            } else {
-                throw e2;
+                certificateNotTrustedError = signinError;
+            }
+            else if (e instanceof OperationCancelledError) {
+                // Don't wrap this error with a sign-in error;
+                //  we want the caller to see that this was a cancellation error.
+                throw e;
+            }
+            else {
+                throw signinError;
             }
         }
         finally {
@@ -362,68 +392,106 @@ async function executeCodeSonarSarifDownload(
     let analysisInfo: CSAnalysisInfo|undefined;
     let baseAnalysisInfo: CSAnalysisInfo|undefined;
     if (analysisInfoArray && analysisInfoArray.length) {
+        const UI_DELAY: number = 500;  // milliseconds to wait between prompts
+        let analysisQuickPickDelay: number|undefined;
+        let targetAnalysisInfoArray: CSAnalysisInfo[]|undefined = analysisInfoArray;
+        if (projectFile !== undefined) {
+            let analysisId: CSAnalysisId|undefined = await getAnalysisIdFromProjectFile(projectFile);
+            if (analysisId !== undefined) {
+                analysisInfo = analysisInfoArray.find(a => (a.id === analysisId));
+            }
+            if (analysisInfo !== undefined) {
+                // Setting targetAnalysisInfoArray to undefined is our signal
+                //  that we don't need to prompt the user to pick analysis:
+                targetAnalysisInfoArray = undefined;
+            }
+            else if (analysisId !== undefined) {
+                // We got an analysisId from prj_files,
+                //  but it does not correspond to a analysis in the list.
+                //  The user will need to pick an analysis later:
+                analysisId = undefined;
+            }
+        }
+        let baselineAnalysisInfoArray: CSAnalysisInfo[]|undefined;
+        if (withAnalysisBaseline) {
+            baselineAnalysisInfoArray = analysisInfoArray;
+        }
+        if (baselineAnalysisInfoArray !== undefined && analysisInfo !== undefined) {
+            // remove the "new" analysis from the list of possible baseline analyses:
+            baselineAnalysisInfoArray = [];
+            for (let analysisInfo2 of analysisInfoArray) {
+                if (analysisInfo2.id !== analysisInfo.id) {
+                    baselineAnalysisInfoArray.push(analysisInfo2);
+                }
+            }
+        }
         // TODO: remember the analysis ID for the baseline analysis,
         //  so that we don't need to look it up in future invocations of the download command.
-        if (!withAnalysisBaseline) {
+        if (baselineAnalysisInfoArray === undefined) {
             // We won't need to find a baseline analysis.
             // pass;
-        }
-        // If there is only one available analysis on the hub,
-        //  then we won't be able to compare two analyses.
-        else if (analysisInfoArray.length === 1) {
-            throw new Error("Not enough analyses were found on the hub to do a baseline comparison.");
         }
         else if (baseAnalysisId !== undefined) {
             baseAnalysisInfo = analysisInfoArray.find(a => (a.id === baseAnalysisId));
             if (baseAnalysisInfo === undefined) {
-                throw new Error("Baseline analysis was not found");
+                throw new Error(`Baseline analysis ${baseAnalysisId} was not found`);
             }
         }
         else if (baseAnalysisName) { // could be empty string or undefined
             baseAnalysisInfo = analysisInfoArray.find(a => (a.name === baseAnalysisName));
             if (baseAnalysisInfo === undefined) {
-                throw new Error("Baseline analysis was not found");
+                throw new Error(`Baseline analysis '${baseAnalysisName}' was not found`);
             }
         }
+        else if (baselineAnalysisInfoArray.length === 0) {
+            // This case might happen if we previously excluded the prj_files analysis from the baseline list.
+            throw new Error("Not enough analyses were found on the hub to do a baseline comparison.");
+        }
+        else if (baselineAnalysisInfoArray.length === 1 && analysisInfo === undefined) {
+            // If there is only one available analysis on the hub,
+            //  then we won't be able to compare two analyses.
+            throw new Error("Not enough analyses were found on the hub to do a baseline comparison.");
+        }
         else {
-            baseAnalysisInfo = await showAnalysisQuickPick(analysisInfoArray, "Select a Baseline Analysis...");
+            baseAnalysisInfo = await showAnalysisQuickPick(
+                    baselineAnalysisInfoArray,
+                    "Select a Baseline Analysis...",
+                );
+            if (baseAnalysisInfo === undefined) {
+                // Setting this to undefined is our signal that the user wants to cancel:
+                targetAnalysisInfoArray = undefined;
+            }
+            else {
+                analysisQuickPickDelay = UI_DELAY;
+            }
             // TODO: show some user feedback to indicate that baseline was chosen,
             //  the two identical quickpicks shown one after another is going to be confusing.
         }
-        let targetAnalysisInfoArray: CSAnalysisInfo[] = analysisInfoArray;
-        if (baseAnalysisInfo !== undefined) {
+        if (baseAnalysisInfo !== undefined && analysisInfo === undefined) {
+            // We will probably need to ask the user to pick the "new" analysis,
+            //  exclude the baseline from the list of choices:
             targetAnalysisInfoArray = [];
-            for (analysisInfo of analysisInfoArray) {
-                if (analysisInfo.id !== baseAnalysisInfo.id) {
-                    targetAnalysisInfoArray.push(analysisInfo);
+            for (let analysisInfo2 of analysisInfoArray) {
+                if (analysisInfo2.id !== baseAnalysisInfo.id) {
+                    targetAnalysisInfoArray.push(analysisInfo2);
                 }
             }
         }
-        // Prompt if we didn't need a baseline,
-        //  or if we needed a baseline and we have one.
-        // If we need a baseline and we don't have one,
-        //  then the user must have cancelled,
-        //  so don't annoy them with another prompt.
-        if (targetAnalysisInfoArray.length < 1) {
-            // We check that some analyses were found prior to getting here,
-            //  and we check that there are many analyses prior to filtering out the baseline analysis,
-            //  so we should never hit this case:
-            assert.fail("Analyses were expected, but none were found");
-        }
-        else if (!withAnalysisBaseline || baseAnalysisInfo !== undefined) {
-            if (projectFile !== undefined) {
-                const analysisId: CSAnalysisId = await getAnalysisIdFromProjectFile(projectFile);
-                // Use the prj file name as the analysis name here,
-                //  ultimately this will become the default name for the SARIF file:
-                const analysisName: string = projectFile.baseName;
-                analysisInfo = {
-                    id: analysisId,
-                    name: analysisName,
-                };
+        if (analysisInfo === undefined && targetAnalysisInfoArray !== undefined) {
+            if (targetAnalysisInfoArray.length < 1) {
+                // We check that some analyses were found prior to getting here,
+                //  and we check that there are many analyses prior to filtering out the baseline analysis,
+                //  so we should never hit this case:
+                assert.fail("Analyses were expected, but none were found");
             }
-            if (analysisInfo === undefined) {
-                analysisInfo = await showAnalysisQuickPick(targetAnalysisInfoArray, "Select an Analysis...");
+            if (analysisQuickPickDelay) {
+                // A short delay so that the two quick-pick prompts back-to-back
+                //  will be less confusing to the user.
+                //  If they appear too quickly in succession,
+                //   it may seem like the first quickPick did not accept your input.
+                await delay(analysisQuickPickDelay);
             }
+            analysisInfo = await showAnalysisQuickPick(targetAnalysisInfoArray, "Select an Analysis...");
         }
     }
     let destinationUri: Uri|undefined;
@@ -488,13 +556,113 @@ async function executeCodeSonarSarifDownload(
             sarifSearchOptions.warningFilter = warningFilter;
         }
         await downloadSarifResults(hubClient, destinationFilePath, analysisInfo, baseAnalysisInfo, sarifSearchOptions);
-        if (extensionOptions.autoOpenSarifViewer) {
+        // We want to know if the SARIF file contains zero results.
+        //  A SARIF file with nothing but metadata is expected to be less than 1KB.
+        const SARIF_MAX_SIZE: number = 4096;
+        const warningCount: number|undefined = await readSarifResultCount(destinationFilePath, SARIF_MAX_SIZE);
+        if (warningCount === 0) {
+            if (baseAnalysisInfo === undefined) {
+                window.showWarningMessage("No warning results were found in the analysis.");
+            }
+            else {
+                window.showInformationMessage("No new warning results were found in the analysis.");
+            }
+        }
+        else if (extensionOptions.autoOpenSarifViewer) {
             await sarifView.showSarifDocument(destinationUri);
         }
         else {
             window.showInformationMessage(`Downloaded CodeSonar Analysis to '${destinationFileName}'`);
         }
     }
+}
+
+/** Get compatibility information from hub.  Throw an error if the extension is too old for the hub. */
+async function verifyHubCompatibility(
+    hubClient: CSHubClient,
+    extensionVersionInfo: csConfig.ExtensionVersionInfo,
+): Promise<CSHubVersionCompatibilityInfo|undefined> {
+    const hubClientName: string = extensionVersionInfo.hubClientName;
+    const hubClientVersion: string = extensionVersionInfo.hubProtocolNumber.toString();
+    const versionCompatibilityInfo: CSHubVersionCompatibilityInfo|undefined =
+        await hubClient.fetchVersionCompatibilityInfo(
+                hubClientName,
+                hubClientVersion,
+            );
+    if (versionCompatibilityInfo !== undefined
+        && versionCompatibilityInfo.clientOK === false
+    ) {
+        // The hub recognized our protocol version and it rejected us:
+        const hubMessage: string = (
+            versionCompatibilityInfo.message 
+            || "Please upgrade the extension.");
+        const message: string = `This CodeSonar extension is not compatible with your hub. ${hubMessage}`;
+        throw new Error(message);
+    }
+    return versionCompatibilityInfo;
+}
+
+async function requestHubUserKeyPassphrase(
+    logger: Logger,
+    hubAddressString: string,
+    hubUserCertFilePath: string,
+    hubUserCertKeyFilePath: string,
+): Promise<string> {
+    const inputValue: string|undefined = await window.showInputBox({
+            password: true,
+            prompt: `Enter passphrase for CodeSonar hub key '${hubUserCertKeyFilePath}' at '${hubAddressString}'`,
+            placeHolder: 'passphrase',
+            ignoreFocusOut: true,
+        });
+    if (inputValue === undefined) {
+        throw new OperationCancelledError("User cancelled passphrase input.");
+    }
+    return inputValue;
+}
+
+async function requestHubUserPassword(
+    logger: Logger,
+    secretStorage: SecretStorage,
+    passwordStorageKeyString: string,
+    hubAddressString: string,
+    hubUserName: string,
+): Promise<string> {
+    let password: string|undefined;
+    
+    try {
+        password= await secretStorage.get(passwordStorageKeyString);
+    }
+    catch (e: unknown) {
+        const errorMessage: string = errorToString(e);
+        logger.warn(`Failed to query VS Code Secret Store: ${errorMessage}`);
+    }
+    if (password !== undefined) {
+        logger.info("Found saved password");
+    }
+    else {
+        const inputValue: string|undefined = await window.showInputBox({
+            password: true,
+            prompt: `Enter password for CodeSonar hub user '${hubUserName}' at '${hubAddressString}'`,
+            placeHolder: 'password',
+            ignoreFocusOut: true,
+        });
+        if (inputValue === undefined) {
+            // TODO this error will be caught when we catch signin errors.
+            //  we should detect and ignore the error in that case.
+            throw new OperationCancelledError("User cancelled password input");
+        }
+        else {
+            try {
+                await  secretStorage.store(passwordStorageKeyString, inputValue);
+            }
+            catch (e: unknown) {
+                const errorMessage: string = errorToString(e);
+                logger.warn(`Failed to save to VS Code Secret Store: ${errorMessage}`);
+            }
+            password = inputValue;
+        }
+    }
+    return password;
 }
 
 /** Try to sign-in to hub.
@@ -521,30 +689,36 @@ async function verifyHubCredentials(hubClient: CSHubClient): Promise<string|unde
 
 async function fetchCSProjectRecords(hubClient: CSHubClient, projectPath?: string): Promise<CSProjectInfo[]> {
     return await window.withProgress<CSProjectInfo[]>({
-            cancellable: false,
+            cancellable: true,
             location: ProgressLocation.Window,
             title: "fetching CodeSonar projects",
         },
         (
             progress: IncrementalProgress,
-            cancelToken: CancellationToken,
+            cancellationToken: CancellationToken,
         ): Thenable<CSProjectInfo[]> => {
-            return hubClient.fetchProjectInfo(projectPath);
+            let requestOptions: CSHubClientRequestOptions = {
+                cancellationSignal: new VSCodeCancellationSignal(cancellationToken),
+            };
+            return hubClient.fetchProjectInfo(projectPath, requestOptions);
         });   
 }
 
 /** Request list of analyses from the hub. */
 async function fetchCSAnalysisRecords(hubClient: CSHubClient, projectId: CSProjectId): Promise<CSAnalysisInfo[]> {
     return await window.withProgress<CSAnalysisInfo[]>({
-            cancellable: false,
+            cancellable: true,
             location: ProgressLocation.Window,
             title: "fetching CodeSonar analyses",
         },
         (
             progress: IncrementalProgress,
-            cancelToken: CancellationToken,
+            cancellationToken: CancellationToken,
         ): Thenable<CSAnalysisInfo[]> => {
-            return hubClient.fetchAnalysisInfo(projectId);
+            let requestOptions: CSHubClientRequestOptions = {
+                cancellationSignal: new VSCodeCancellationSignal(cancellationToken),
+            };
+            return hubClient.fetchAnalysisInfo(projectId, requestOptions);
         });
 }
 
@@ -634,10 +808,10 @@ async function showQuickPick<T>(
 }
 
 /** Try to get the analysis ID from the .prj_files dir. */
-async function getAnalysisIdFromProjectFile(projectFile: CSProjectFile): Promise<CSAnalysisId> {
-    const analysisIdString: string = await projectFile.readAnalysisIdString();
+async function getAnalysisIdFromProjectFile(projectFile: CSProjectFile): Promise<CSAnalysisId|undefined> {
+    const analysisIdString: string|undefined = await projectFile.readAnalysisIdString();
     // Exploit the fact CSAnalysisId is a string:
-    const analysisId: CSAnalysisId = analysisIdString;
+    const analysisId: CSAnalysisId|undefined = analysisIdString;
     return analysisId;
 }
 
@@ -657,6 +831,33 @@ async function showSarifSaveDialog(defaultFilePath: string): Promise<Uri|undefin
         });
 }
 
+/** Count the number of warning results in a small SARIF file.
+ * 
+ *  @returns count of result records in Sarif if file file is not larger than maxBytes.
+ *    If file is larger than maxBytes, returns undefined.
+*/
+async function readSarifResultCount(
+    sarifFilePath: string,
+    maxBytes: number,
+): Promise<undefined|number> {
+    const fileInfo: FileInfo = await readFileInfo(sarifFilePath);
+    let resultCount: number|undefined = undefined;
+    if (BigInt(fileInfo.size) <= BigInt(maxBytes)) {
+        const sarifText: string = await readFileText(sarifFilePath);
+        const sarifJson: any = JSON.parse(sarifText);
+        const sarifDoc: SarifLog|undefined = sarifJson as SarifLog;
+        resultCount = 0;
+        if (sarifDoc && sarifDoc.runs) {
+            for (let run of sarifDoc.runs) {
+                if (run && run.results) {
+                    resultCount += run.results.length;
+                }
+            }
+        }
+    }
+    return resultCount;
+}
+
 async function downloadSarifResults(
         hubClient: CSHubClient,
         destinationFilePath: string,
@@ -672,10 +873,14 @@ async function downloadSarifResults(
         cancellable: true,
     }, (
         progress: IncrementalProgress,
-        token: CancellationToken,
+        cancellationToken: CancellationToken,
     ) => {
+        const cancellationSignal: CancellationSignal = new VSCodeCancellationSignal(cancellationToken);
         // TODO: download to temporary location and move it when finished
-        const destinationStream: NodeJS.WritableStream = fs.createWriteStream(destinationFilePath);
+        const destinationStream: NodeJS.WritableStream = createFileWriteStream(destinationFilePath);
+
+        const sarifSearchOptions2: CSHubSarifSearchOptions = Object.assign({}, sarifSearchOptions);
+        sarifSearchOptions2.cancellationSignal = cancellationSignal;
 
         progress.report({increment: 0});
         // The progress meter sums up the increment values that we give it,
@@ -720,10 +925,10 @@ async function downloadSarifResults(
             intervalMS);
         let sarifPromise: Promise<Readable>;
         if (baseAnalysisId !== undefined) {
-            sarifPromise = hubClient.fetchSarifAnalysisDifferenceStream(analysisId, baseAnalysisId, sarifSearchOptions);
+            sarifPromise = hubClient.fetchSarifAnalysisDifferenceStream(analysisId, baseAnalysisId, sarifSearchOptions2);
         }
         else {
-            sarifPromise = hubClient.fetchSarifAnalysisStream(analysisId, sarifSearchOptions);
+            sarifPromise = hubClient.fetchSarifAnalysisStream(analysisId, sarifSearchOptions2);
         }
         return new Promise<string>((
             resolve: (savedFilePath: string) => void,
@@ -731,10 +936,25 @@ async function downloadSarifResults(
         ): void => {
             const reject: (e: unknown) => void = (e: unknown): void => {
                 clearInterval(timer);
-                destinationStream.end();
-                _reject(e);
+                destinationStream.end((): void => {
+                    unlinkFile(destinationFilePath, (e2: unknown): void => {
+                        // Ignore this unlink error since the rejection error is more important.
+                    });
+                });
+                let e2: unknown = e;
+                if (cancellationSignal.isCancellationRequested) {
+                    // If we cancel during download, Node will probably raise a generic error,
+                    //  with the message code='ECONNRESET' and message "aborted".
+                    // Rather than assume that such an error signals a cancellation,
+                    //  always assume that if a cancellation was requested,
+                    //  that the error is simply a result of the cancellation.
+                    e2 = cancellationSignal.createCancellationError();
+                }
+                _reject(e2);
             };
             sarifPromise.then((sarifStream: Readable): void => {
+                // Errors from the sarifStream don't seem to bubble-up to the pipe stream.
+                sarifStream.on('error', reject);
                 sarifStream.pipe(destinationStream
                     ).on('error', reject
                     ).on('finish', (): void => {
@@ -750,20 +970,6 @@ async function downloadSarifResults(
                         },
                         intervalMS);
                     });
-                token.onCancellationRequested(() => {
-                    sarifStream.unpipe();
-                    sarifStream.destroy();
-                    destinationStream.end(
-                        (): void => {
-                            fs.unlink(destinationFilePath, (e: unknown): void => {
-                                if (e) {
-                                    reject(e);
-                                } else {
-                                    reject(new Error("Canceled"));
-                                }
-                            });
-                        });
-                });
                 }).catch(reject);
         });
     });

@@ -1,12 +1,20 @@
 /** Utilities for codesonar integration. */
-
-import { readFile } from 'fs';
 import * as path from 'path';
+
+import { 
+    fileExists,
+    readFileText,
+}  from './fs_ex';
+import { PKCSFile } from './pkcs';
+
+
+export type CSHubAuthenticationMethod = "anonymous" | "password" | "certificate";
 
 export const PRJ_DIR_EXT: string = ".prj_files";
 export const PRJ_FILE_EXT: string = ".prj";
 
 const AID_FILE_NAME: string = "aid.txt";
+
 
 /** An object to help with finding .prj files. */
 export class CSProjectFile {
@@ -32,26 +40,19 @@ export class CSProjectFile {
     }
 
     /** Read the analysis ID from the project directory. */
-    public readAnalysisIdString(): Promise<string> {
+    public async readAnalysisIdString(): Promise<string|undefined> {
         const aidFilePath: string = path.join(this.prjDirPath, AID_FILE_NAME);
-        return new Promise<string>((
-            resolve: (idString: string) => void,
-            reject: (e: unknown) => void,
-        ) => {
-            readFile(
-                aidFilePath,
-                { encoding: "utf-8" },
-                (e: unknown|null, data: string): void => {
-                    if (e) {
-                        reject(e);
-                    } else if (data.length < 1) {
-                        reject(new Error("Empty aid file"));
-                    } else {
-                        resolve(data.trim());
-                    }
-                });   
+        const aidFileExists: boolean = await fileExists(aidFilePath);
+        let analysisId: string|undefined;
+        if (aidFileExists) {
+            let data: string = await readFileText(aidFilePath);
+            data = data.trim();
+            if (data.length < 1) {
+                throw new Error("Empty aid file");
+            } 
+            analysisId = data;   
         }
-        );    
+        return analysisId;  
     }
 }
 
@@ -98,5 +99,75 @@ export class CSProjectFile {
 
     public toString(): string {
         return this.hubAddressString;
+    }
+}
+
+
+/** Factory function to create and load a hub key. */
+export async function loadCSHubUserKey(
+    certFilePath: string,
+    keyFilePath: string,
+): Promise<CSHubUserKey> {
+    const userKey: CSHubUserKey = new CSHubUserKey(certFilePath, keyFilePath);
+    await userKey.load();
+    return userKey;
+}
+
+
+/** Encapsulates hubcert/hubkey authentication options. */
+export class CSHubUserKey {
+    public certFilePath: string;
+    public keyFilePath: string;
+    public cert: string|undefined;
+    public key: string|undefined;
+    private _keyIsProtected: boolean|undefined;
+
+    constructor(
+        certFilePath: string,
+        keyFilePath: string,
+    ) {
+        this.certFilePath = certFilePath;
+        this.keyFilePath = keyFilePath;
+        this._keyIsProtected = undefined;
+    }
+
+    public get keyIsProtected(): boolean|undefined {
+        return this._keyIsProtected;
+    }
+
+    /** Load certificates by reading files.
+     * 
+     *  It is safe to call this method multiple times.
+     *  Subsequent invocations will not attempt to reload file data.
+    */
+    public async load(): Promise<CSHubUserKey> {
+        if (this.cert === undefined) {
+            this.cert = await readFileText(this.certFilePath);
+        }
+        if (this.key === undefined) {
+            this.key = await readFileText(this.keyFilePath);
+            this.inspectKey(this.key);
+        }
+
+        return this;
+    }
+
+    private inspectKey(key: string): void {
+        const keyFile: PKCSFile = new PKCSFile();
+        keyFile.parseText(key);
+        for (let item of keyFile.items) {
+            if (item.isPrivate === undefined || item.isProtected === undefined) {
+                throw new Error("Could not determine protection status of hub user key file");
+            }
+            else if (item.isPrivate === true && item.isProtected === true) {
+                this._keyIsProtected = true;
+            }
+            else if (item.isPrivate === true
+                    && item.isProtected === false
+                    && this.keyIsProtected === undefined
+            ) {
+                this._keyIsProtected = false;
+            }
+        }
     }
 }
