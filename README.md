@@ -79,7 +79,7 @@ Now, we want to run an initial analysis. We need to create a command that will i
 Replace the variables with actual data for your environment. An example command for a first analysis:
 
 ```shell
-$ /home/shoresy/opt/codesonar-7.1p0/codesonar/bin/codesonar analyze /home/shoresy/Projects/Basic -auth password -hubuser shoresy -project /Basic -name Baseline https://partnerdemo.codesonar.com:7340 make
+$ /opt/codesonar-7.1p0/codesonar/bin/codesonar analyze Basic -auth password -hubuser shoresy -project /Basic -name Baseline http://localhost:7340 make
 ```
 
 Your command line will be be different, depending on where you have CodeSonar installed, how you login to your hub, and where you intend to store project information.
@@ -112,7 +112,7 @@ You can request the results of a scan from a hub you have login privileges on. T
 
 You will be prompted to save the SARIF file on your local machine. You can save the file anywhere, but it can be easier to use a subdirectory in your source folder. Once saved, the file will be opened in the SARIF viewer and you can begin assessing warnings. 
 
-## Step 5: Acheieve Repeatable Analyses with a Task
+## Step 5: Achieve Repeatable Analyses with a Task
 If you want to have CodeSonar analyze your code as a VSCode *Task*, you can start from this one and customize to your specific needs:
  
 ### On-prem hub
