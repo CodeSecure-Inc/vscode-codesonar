@@ -1,5 +1,8 @@
 # Change Log
 
+This version: $(CSONAR_VSCODE_SIG_VERSION), Commit: $(CSONAR_VSCODE_GIT_COMMIT)
+
+
 ## 1.0.0
 
 * Provides extension commands to download warnings in SARIF format.

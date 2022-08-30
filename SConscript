@@ -1,4 +1,5 @@
 import os
+from socket import gethostname
 
 Import('env')
 
@@ -13,6 +14,34 @@ csonar_vscode_protocol_num = env['CSONAR_VSCODE_HUB_PROTOCOL_VERSION']
 CSO_VSCODE_PUBLIC_DOC_URL_BASE = 'https://support-resources.grammatech.com/integrations/vscode/documentation/v1/'
 
 
+def get_signature(package_name, version):
+    """ Get SIGNATURE information as a dict. """
+    # Implementation derives from SConsGTR.GetSignatureTxt:
+    today = env.GetTodaysDate()
+    dt_str = today.replace('-', '')
+    hostname = gethostname()
+    host_platform = env['HOST_PKGNAME_PLATFORM']
+    package_version_name = '%s-%s' % (package_name, version)
+    pkg_suffix = '.%s-%s' % (dt_str, host_platform)
+    full_version = '%s.%s' % (version, dt_str)
+    branch = env.GTBranch()
+    commit = env.GTGetGitLastCommit()
+    sigvals = {
+        'Product Name': package_version_name,
+        'Installer Basename': package_version_name + pkg_suffix,
+        'Branch': branch,
+        'Commit': commit.hash,
+        'Commit Timestamp': commit.timestamp,
+        'Date': today,
+        'Node': hostname,
+        'Version': full_version,
+        'Build Platform': env['BUILD_CANON_PLATFORM'],
+        'Host Platform': host_platform,
+        'Target Platform': env['TARGET_CANON_PLATFORM'],
+    }
+    return sigvals
+
+
 def file_content_sub(outfile, infile, repls):
     """ Substitute a dict of token name,value pairs from a source file to a target file. """
     with open(infile, 'r') as in_io:
@@ -22,9 +51,12 @@ def file_content_sub(outfile, infile, repls):
     with open(outfile, 'w') as out_io:
         out_io.write(file_contents)
 
+def make_action_formatter(action_name):
+    return (lambda target, source, env: '%s(%s, ...)' % (action_name, target[0].path))
+
 
 def update_extension_version_module(target, source, env):
-    """ Replace plugin package name and version number in package.json """
+    """ Replace plugin version number in extension_version.ts source code file. """
     extension_version_target = target[0]
     extension_version_source, version_string_source, protocol_number_source = source
     version_string = version_string_source.get_text_contents()
@@ -36,9 +68,6 @@ def update_extension_version_module(target, source, env):
             '__CSONAR_VSCODE_VERSION__': version_string,
             '__CSONAR_VSCODE_PROTOCOL_NUMBER__': protocol_number_string,
         })
-
-def update_extension_version_module_action_formatter(target, source, env):
-    return 'cso_vscode_update_extension_version(%s, ...)' % target[0].path
 
 
 extension_version_ts = env.Command(
@@ -52,7 +81,38 @@ extension_version_ts = env.Command(
     ],
     env.Action(
         update_extension_version_module,
-        update_extension_version_module_action_formatter),
+        make_action_formatter('cso_vscode_update_extension_version')),
+    )
+
+
+def update_extension_signature(target, source, env):
+    """ Replace plugin version info in CHANGELOG.md.in """
+    signature_target = target[0]
+    signature_source, pkg_name_source, version_string_source = source
+    pkg_name = pkg_name_source.get_text_contents()
+    pkg_version = version_string_source.get_text_contents()
+    signature = get_signature(pkg_name, pkg_version)
+    file_content_sub(
+        signature_target.abspath,
+        signature_source.abspath,
+        {
+            '$(CSONAR_VSCODE_SIG_VERSION)': signature['Version'],  # includes datestamp
+            '$(CSONAR_VSCODE_GIT_BRANCH)': signature['Branch'],
+            '$(CSONAR_VSCODE_GIT_COMMIT)': signature['Commit'],
+        })
+
+changelog_md = env.Command(
+    [
+        'CHANGELOG.md'
+    ],
+    [
+        'CHANGELOG.md.in',
+        Value(csonar_vscode_pkg_name),
+        Value(csonar_vscode_version_str),
+    ],
+    env.Action(
+        update_extension_signature,
+        make_action_formatter('cso_vscode_update_extension_signature')),
     )
 
 
@@ -93,7 +153,7 @@ npm_package_json = env.Command(
     ],
     env.Action(
         update_npm_package_json,
-        update_package_json_action_formatter),
+        make_action_formatter('cso_vscode_update_package_json')),
     )
 
 # package-lock.json is both a build source and target,
@@ -131,9 +191,10 @@ cso_vscode_project_source = cso_vscode_project_src_dir.glob('*.ts')
 cso_vscode_project_source += extension_version_ts
 cso_vscode_project_source += [File(x) for x in [
     'README.md',
-    'CHANGELOG.md',
     'LICENSE.txt',
 ]]
+cso_vscode_project_source += changelog_md
+
 # extension_version.ts is generated, but it may already exist in the src dir.
 #  Use a dictionary to remove duplicates, and sort to avoid scons -q complaints:
 cso_vscode_project_source_dict = { f.get_abspath():f for f in cso_vscode_project_source}
