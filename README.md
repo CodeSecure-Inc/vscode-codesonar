@@ -1,9 +1,9 @@
 # CodeSonar Extension for Visual Studio Code
 
-This extension from [GrammaTech](https://grammatech.com/codesonar) provides access to static code analysis results from a *CodeSonar* hub inside Visual Studio Code.
+This extension from [GrammaTech](https://grammatech.com) provides access to static code analysis results from a *CodeSonar* hub inside Visual Studio Code.
 
 **Requirements**
-- Access to a [CodeSonar](https://www.grammatech.com/codesonar) hub of version `7.1p0`.
+- Access to a [CodeSonar](https://www.grammatech.com/products/source-code-analysis) hub of version `7.1p0`.
 - The latest version of the CodeSonar extension requires at least VSCode `1.70.1`.
 - A functioning build environment.
 - The [Sarif Viewer](https://marketplace.visualstudio.com/items?itemName=MS-SarifVSCode.sarif-viewer) extension from Microsoft.
