@@ -470,8 +470,6 @@ async function executeCodeSonarSarifDownload(
             else {
                 analysisQuickPickDelay = UI_DELAY;
             }
-            // TODO: show some user feedback to indicate that baseline was chosen,
-            //  the two identical quickpicks shown one after another is going to be confusing.
         }
         if (baseAnalysisInfo !== undefined && analysisInfo === undefined) {
             // We will probably need to ask the user to pick the "new" analysis,
@@ -661,8 +659,6 @@ async function requestHubUserPassword(
             ignoreFocusOut: true,
         });
         if (inputValue === undefined) {
-            // TODO this error will be caught when we catch signin errors.
-            //  we should detect and ignore the error in that case.
             throw new OperationCancelledError("User cancelled password input");
         }
         else {
