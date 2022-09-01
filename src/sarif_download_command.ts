@@ -513,9 +513,17 @@ async function executeCodeSonarSarifDownload(
         if (inputHubAddressString) {
             await csConfigIO.writeHubAddress(inputHubAddressString);
             writeCount += 1;
-            if (inputHubUserName !== undefined) {
-                await csConfigIO.writeHubUserName(inputHubUserName);
+            if (inputHubUserName === undefined) {
+                // don't save anything.
+            }
+            else if (inputHubUserName === "") {
+                await csConfigIO.writeHubAuthenticationMode(CSHubAuthenticationMethod.anonymous);
                 writeCount += 1;
+            }
+            else {
+                await csConfigIO.writeHubAuthenticationMode(CSHubAuthenticationMethod.password);
+                await csConfigIO.writeHubUserName(inputHubUserName);
+                writeCount += 2;
             }
         }
         if (inputProjectInfo !== undefined) {
