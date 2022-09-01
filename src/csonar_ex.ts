@@ -8,7 +8,11 @@ import {
 import { PKCSFile } from './pkcs';
 
 
-export type CSHubAuthenticationMethod = "anonymous" | "password" | "certificate";
+export enum CSHubAuthenticationMethod {
+    anonymous = "anonymous",
+    password = "password",
+    certificate = "certificate",
+}
 
 export const PRJ_DIR_EXT: string = ".prj_files";
 export const PRJ_FILE_EXT: string = ".prj";
