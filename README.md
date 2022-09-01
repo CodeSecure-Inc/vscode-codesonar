@@ -34,10 +34,7 @@ int main()
     return 0;    
 }
 ```
-Now, we need a makefile to help us build the project. The instructions are slightly different, depending on your installed compiler and operating system, and you are encouraged to modify them as needed.
-
-### Linux
-Add a file named `Makefile` to your project and copy the following snippet to it:
+Now, we let's add a makefile to help us build the project. Create a file named `Makefile` in your project folder and copy the following snippet to it:
 ``` make
 CC = gcc
 
@@ -49,34 +46,21 @@ Basic: Basic.c
 clean:
 	rm -f *.o *~ core Basic
 ```
-### Windows
-Add a file named `Basic.mak` to your project and add the following snippet to it:
-``` make
-CC = cl
-
-all = Basic.exe
-
-Basic.exe: Basic.c
-	$(CC) Basic.c /link /out:Basic.exe
-
-clean:
-	del /q *.obj *~ Basic.exe
-```
-If you are using a compiler other than `gcc` or `cl`, you should change the CC macro on line 1 to call the your compiler.
+If you are using a compiler other than `gcc`, you should change the CC macro on line 1 to call the your compiler.
 
 ### Make Sure it all Works
-We will add tasks to automate our project later, but for now, make sure the project builds. If you have not already done so, open a terminal from the `Terminal > New Terminal` menu. 
+We will add tasks to automate our project later, but for now, let's make sure the project builds. If you have not already done so, open a terminal from the `Terminal > New Terminal` menu. 
 
-On a Linux system, type `make all` in the terminal. On Windows, type `nmake -f Basic.mak`. If the project builds, your environment is properly configured and you can move on to step 2. 
+To build the project, type `make all` in the terminal. If the project builds, your environment is properly configured and you can move on to step 2.
 
-Unfortunately, diagnosing build failures is outside the scope of this README. Many problems can be resolved by making sure tools are actually installed and the PATH environment variable is properly set.
+Unfortunately, diagnosing build failures is outside the scope of this document. Many problems can be resolved by making sure tools are actually installed and the PATH environment variable is properly set.
 
 ## Step 2: Run an Analysis
 Now, we want to run an initial analysis. We need to create a command that will instruct CodeSonar to analyze a build and send the results to a hub. The format of the command is:
 
-`<Install Dir>/codesonar/bin/codesonar analyze <Project File> -project <Project> -auth <Authentication Mode> -hubuser <Hub User> -name <Analysis Name> <Hub Address> make`
+`<Install-Dir>/codesonar/bin/codesonar analyze <Project-File> -project <Project> -auth <Authentication-Mode> -hubuser <Hub-User> -name <Analysis-Name> <Hub-Address> make`
 
-Replace the variables with actual data for your environment. An example command for a first analysis:
+Replace the placeholders above with actual data for your environment. An example command for a first analysis:
 
 ```shell
 $ /opt/codesonar-7.1p0/codesonar/bin/codesonar analyze Basic -auth password -hubuser shoresy -project /Basic -name Baseline http://localhost:7340 make
@@ -85,13 +69,13 @@ $ /opt/codesonar-7.1p0/codesonar/bin/codesonar analyze Basic -auth password -hub
 Your command line will be be different, depending on where you have CodeSonar installed, how you login to your hub, and where you intend to store project information.
 
 ## Step 3: Save that Information in Settings
-We are going to store the information from the command line you just tested so we can use it later. The extension has several options, and explaining them all is beyond the scope of this README, but we will use the most important options to get started.
+We are going to store the information from the command line you just tested so we can use it later. The extension has several options, and explaining them all is beyond the scope of this document, but we will use the most important options to get started.
 
 Open the Setting dialog by typing `CRTL`-`,`. To make the next few steps easier, filter on the CodeSonar extension settings by typing `codesonar` in the **Search settings** widget.
 ![Filter extension settings example](resources/img/filter.png)
 
 ### Where is CodeSonar installed
-To run an analysis, you need access to a local installation of CodeSonar. Define the root of your installation in **InstallDir**.
+To run an analysis, you need access to a local installation of CodeSonar. Define the root of your installation in **Install Dir**.
 ![Settings: codesonar.installDir](resources/img/installdir.png)
 
 ## Where is your hub
@@ -149,10 +133,6 @@ Now we want to test the task. Type
 ``` shell
 $ make clean
 ``` 
-or 
-``` shell
-$ nmake -f Makefile.mak clean
-``` 
 in the terminal. Then, run the task by selecting the `Terminal`>`Run Task...` menu and selecting the `C/C++: CodeSonar analyze` task we defined.
 
 ![Run a defined task example](resources/img/runtask.png)
@@ -169,11 +149,11 @@ Once the analysis completes successfully, you can download it from the hub as we
 Now that you know the basic theory of operation, you can experiment with the setings, create your own tasks, modify the code to fix errors or introduce new one, and apply this to a full project.
 
 # Define a Baseline Analysis
-The CodeSonar extension for VSCode allows you to compare two analyses and download only newer warnings. This saves time and allows you to focus on what is important. To unlock this feature, you need to define a baseline analysis against which to compare. If you recall, we named our first analysis *Baseline*. We will enter that analysis name in the **Baseline Analysis**** setting, but you can select any full analysis in the project.
+The CodeSonar extension for VSCode allows you to compare two analyses and download only newer warnings. This saves time and allows you to focus on what is important. To unlock this feature, you need to define a baseline analysis against which to compare. If you recall, we named our first analysis *Baseline*. We will enter that analysis name in the **Baseline Analysis** setting, but you can select any full analysis in the project.
 
 ![Define a baseline analysis example](resources/img/baseline.png)
 
-Open the command pallette and type `CodeSonar:`, then select the `CodeSonar:Download SARIF;New Warnings` command. 
+Open the command pallette and type `CodeSonar:`, then select the `CodeSonar:Download SARIF: New Warnings` command. 
 
 ![Get new warnings example](resources/img/getnewwarnings.png)
 
