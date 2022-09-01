@@ -461,8 +461,11 @@ async function executeCodeSonarSarifDownload(
                     "Select a Baseline Analysis...",
                 );
             if (baseAnalysisInfo === undefined) {
-                // Setting this to undefined is our signal that the user wants to cancel:
+                // User wants to cancel:
+                // Setting targetAnalysisInfoArray to undefined is our signal that we shouldn't prompt them further:
                 targetAnalysisInfoArray = undefined;
+                // analysisInfo must also be set undefined since we could have got it from prj_files:
+                analysisInfo = undefined;
             }
             else {
                 analysisQuickPickDelay = UI_DELAY;
