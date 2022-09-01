@@ -355,25 +355,28 @@ async function executeCodeSonarSarifDownload(
             hubClient = undefined;
         }
     }
+    let projectInfo: CSProjectInfo|undefined;
     let projectInfoArray: CSProjectInfo[]|undefined;
     if (hubClient && !projectId) {
         projectInfoArray = await fetchCSProjectRecords(hubClient, projectPath);
-    }
-    if (hubClient && projectInfoArray && projectInfoArray.length < 1 && projectPath) {
-        // We tried to fetch the project by its path, but it was not found.
-        //  Get the entire list of projects,
-        //   we will need to ask the user to pick one:
-        projectInfoArray = await fetchCSProjectRecords(hubClient);
+        if (projectPath) {
+            if (projectInfoArray.length === 1) {
+                // found the project by searching by project treepath name:
+                projectInfo = projectInfoArray[0];
+            }
+            else if (projectInfoArray.length < 1) {
+                // We tried to fetch the project by its path, but it was not found.
+                //  Get the entire list of projects,
+                //   we will need to ask the user to pick one:
+                projectInfoArray = await fetchCSProjectRecords(hubClient);
+            }
+            // else if (projectInfoArray.length > 1)  // projectPath matched multiple projects
+        }
+        // else // projectInfoArray is the entire project list already
     }
     let inputProjectInfo: CSProjectInfo|undefined;
-    let projectInfo: CSProjectInfo|undefined;
-    if (projectInfoArray && projectInfoArray.length === 1) {
-        // TODO: what if the hub has exactly one project,
-        //  and the projectPath does not match it?
-        //  Should we show the picker with just one selectable item?
-        projectInfo = projectInfoArray[0];
-    }
-    else if (projectInfoArray && projectInfoArray.length > 1) {
+    if (projectInfoArray && projectInfoArray.length > 0 && !projectInfo) {
+        // User must choose a project:
         inputProjectInfo = await showProjectQuickPick(projectInfoArray);
         projectInfo = inputProjectInfo;
     }
