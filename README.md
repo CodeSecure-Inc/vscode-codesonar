@@ -4,14 +4,14 @@ This extension from [GrammaTech](https://grammatech.com) provides access to stat
 
 **Requirements**
 - Access to a [CodeSonar](https://www.grammatech.com/products/source-code-analysis) hub of version `7.1p0`.
-- The latest version of the CodeSonar extension requires at least VSCode `1.70.1`.
+- The latest version of the CodeSonar extension requires at least VS Code `1.70.1`.
 - A functioning build environment.
 - The [Sarif Viewer](https://marketplace.visualstudio.com/items?itemName=MS-SarifVSCode.sarif-viewer) extension from Microsoft.
 
 # Getting Started
-VSCode is an editor; it does not ship with a built-in compiler or build tools. Before starting, you should ensure you have CodeSonar, build tools such as *make*, and a compiler, like *gcc*, installed and available in the PATH. 
+VS Code is an editor; it does not ship with a built-in compiler or build tools. Before starting, you should ensure you have CodeSonar, build tools such as *make*, and a compiler, like *gcc*, installed and available in the PATH. 
 
-**Note**: The instructions in this README assume a single user working on a project. People working in teams will have to adapt the instructions for things like **Settings** and **Tasks** when you deploy this for multiple engineers.
+**Note**: The instructions in this document assume a single user working on a project. People working in teams will have to adapt the instructions for things like **Settings** and **Tasks** when you deploy this for multiple engineers.
 
 ## Step 1: Create a New Project
 First, we need some code to scan. Create a new folder and add a file named `Basic.c` to it. Copy the following code snippet to the file:
@@ -71,7 +71,7 @@ Your command line will be be different, depending on where you have CodeSonar in
 ## Step 3: Save that Information in Settings
 We are going to store the information from the command line you just tested so we can use it later. The extension has several options, and explaining them all is beyond the scope of this document, but we will use the most important options to get started.
 
-Open the Setting dialog by typing `CRTL`-`,`. To make the next few steps easier, filter on the CodeSonar extension settings by typing `codesonar` in the **Search settings** widget.
+Open the Settings page by selecting menu **File** > **Preferences** > **Settings** (or `CRTL`-`,`). To make the next few steps easier, filter on the CodeSonar extension settings by typing `codesonar` in the **Search settings** widget.
 ![Filter extension settings example](resources/img/filter.png)
 
 ### Where is CodeSonar installed
@@ -86,18 +86,18 @@ You need to define the URL of the hub you want to interact with. In this example
 In order to interact with a hub, you usually need to provide credentials. You have to instruct the extension how to authenticate with the hub by selecting an option in **Authentication Mode**.
 ![Settings: codesonar.authenticationMode](resources/img/logintype.png)
 
-In this example, we will login to the hub with a user name and password so we enter a valid username on **Hub User**. For this tutorial, we are fine being prompted for a password, so we leave the **Hub Password File** field blank.
+In this example, we will login to the hub with a user name and password so we enter a valid username on **Hub User**.
 ![Settings: codesonar.hubUser](resources/img/credentials.png)
 
 ## Step 4: Download an Analysis
-You can request the results of a scan from a hub you have login privileges on. Type `CTRL`-`Shift`-`P` to open the command palette, and then select `CodeSonar: Download SARIF: Entire Analysis`
+You can request the results of a scan from a hub you have login privileges on. Open the Command Palette by selecting the menu **View** > **Command Palette...** (or `CTRL`-`Shift`-`P`), and then select `CodeSonar: Download SARIF: Entire Analysis`
 
 ![Download analysis example](resources/img/download.png)
 
 You will be prompted to save the SARIF file on your local machine. You can save the file anywhere, but it can be easier to use a subdirectory in your source folder. Once saved, the file will be opened in the SARIF viewer and you can begin assessing warnings. 
 
 ## Step 5: Achieve Repeatable Analyses with a Task
-If you want to have CodeSonar analyze your code as a VSCode *Task*, you can start from this one and customize to your specific needs:
+If you want to have CodeSonar analyze your code as a VS Code *Task*, you can start from this one and customize to your specific needs:
  
 ### On-prem hub
 ```json
@@ -149,7 +149,7 @@ Once the analysis completes successfully, you can download it from the hub as we
 Now that you know the basic theory of operation, you can experiment with the setings, create your own tasks, modify the code to fix errors or introduce new one, and apply this to a full project.
 
 # Define a Baseline Analysis
-The CodeSonar extension for VSCode allows you to compare two analyses and download only newer warnings. This saves time and allows you to focus on what is important. To unlock this feature, you need to define a baseline analysis against which to compare. If you recall, we named our first analysis *Baseline*. We will enter that analysis name in the **Baseline Analysis** setting, but you can select any full analysis in the project.
+The CodeSonar extension for VS Code allows you to compare two analyses and download only newer warnings. This saves time and allows you to focus on what is important. To unlock this feature, you need to define a baseline analysis against which to compare. If you recall, we named our first analysis *Baseline*. We will enter that analysis name in the Baseline Analysis setting so that we won't be prompted to choose a baseline analysis when we request the new warnings.
 
 ![Define a baseline analysis example](resources/img/baseline.png)
 
