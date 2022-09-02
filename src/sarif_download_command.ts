@@ -461,14 +461,15 @@ async function executeCodeSonarSarifDownload(
                     "Select a Baseline Analysis...",
                 );
             if (baseAnalysisInfo === undefined) {
-                // Setting this to undefined is our signal that the user wants to cancel:
+                // User wants to cancel:
+                // Setting targetAnalysisInfoArray to undefined is our signal that we shouldn't prompt them further:
                 targetAnalysisInfoArray = undefined;
+                // analysisInfo must also be set undefined since we could have got it from prj_files:
+                analysisInfo = undefined;
             }
             else {
                 analysisQuickPickDelay = UI_DELAY;
             }
-            // TODO: show some user feedback to indicate that baseline was chosen,
-            //  the two identical quickpicks shown one after another is going to be confusing.
         }
         if (baseAnalysisInfo !== undefined && analysisInfo === undefined) {
             // We will probably need to ask the user to pick the "new" analysis,
@@ -513,9 +514,17 @@ async function executeCodeSonarSarifDownload(
         if (inputHubAddressString) {
             await csConfigIO.writeHubAddress(inputHubAddressString);
             writeCount += 1;
-            if (inputHubUserName !== undefined) {
-                await csConfigIO.writeHubUserName(inputHubUserName);
+            if (inputHubUserName === undefined) {
+                // don't save anything.
+            }
+            else if (inputHubUserName === "") {
+                await csConfigIO.writeHubAuthenticationMode(CSHubAuthenticationMethod.anonymous);
                 writeCount += 1;
+            }
+            else {
+                await csConfigIO.writeHubAuthenticationMode(CSHubAuthenticationMethod.password);
+                await csConfigIO.writeHubUserName(inputHubUserName);
+                writeCount += 2;
             }
         }
         if (inputProjectInfo !== undefined) {
@@ -650,8 +659,6 @@ async function requestHubUserPassword(
             ignoreFocusOut: true,
         });
         if (inputValue === undefined) {
-            // TODO this error will be caught when we catch signin errors.
-            //  we should detect and ignore the error in that case.
             throw new OperationCancelledError("User cancelled password input");
         }
         else {

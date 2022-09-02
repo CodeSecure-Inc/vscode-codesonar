@@ -29,6 +29,7 @@ import {
 } from './http_client';
 import { 
     CSHubAddress,
+    CSHubAuthenticationMethod,
     CSHubUserKey,
 } from './csonar_ex';
 
@@ -52,7 +53,6 @@ export interface CSAnalysisInfo {
     name: string;
 }
 
-export type CSHubAuthenticationMethod = "anonymous" | "password" | "certificate";
 
 /** Options for authenticating with a CodeSonar hub.
  *
@@ -285,7 +285,7 @@ export class CSHubClient {
                 protocol = HTTPS_PROTOCOL;
             }
             if ((hubOptions.auth === undefined
-                    || hubOptions.auth === "certificate"
+                    || hubOptions.auth === CSHubAuthenticationMethod.certificate
                 ) && hubOptions.hubkey !== undefined
             ) {
                 await hubOptions.hubkey.load();
@@ -507,7 +507,7 @@ export class CSHubClient {
             resolve: (e: string|undefined) => void,
             reject: (e: any) => void,
         ) => {
-            if ((connOptions.auth === undefined || connOptions.auth === "certificate")
+            if ((connOptions.auth === undefined || connOptions.auth === CSHubAuthenticationMethod.certificate)
                 && (connOptions.hubkey !== undefined)
             ) {
                 const sif: CSHubSignInForm = {
@@ -546,7 +546,7 @@ export class CSHubClient {
                     }
                 });
             }
-            else if ((connOptions.auth === undefined || connOptions.auth === "password")
+            else if ((connOptions.auth === undefined || connOptions.auth === CSHubAuthenticationMethod.password)
                     && connOptions.hubuser) {
                 let passwordPromise: Promise<string>|undefined; 
                 if (connOptions.hubpasswd) {
@@ -589,7 +589,7 @@ export class CSHubClient {
                     });
                 }
             }
-            else if (connOptions.auth === undefined || connOptions.auth === "anonymous") {
+            else if (connOptions.auth === undefined || connOptions.auth === CSHubAuthenticationMethod.anonymous) {
                 // Simply drop existing sign-in cookie
                 this.getHttpClientConnection(options).then(
                     (httpConn: HTTPClientConnection): void => {

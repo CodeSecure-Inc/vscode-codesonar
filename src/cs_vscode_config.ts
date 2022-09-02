@@ -119,6 +119,11 @@ export class CSConfigIO {
         await this.wsConfig.update(CONFIG_HUB_USER, hubUserName);
     }
 
+    /** Save hub authentication mode/method to config store. */
+    async writeHubAuthenticationMode(authenticationMode: CSHubAuthenticationMethod): Promise<void> {
+        await this.wsConfig.update(CONFIG_HUB_AUTH, authenticationMode);
+    }
+
     /** Save CodeSonar project path to config store. */
     async writeProjectPath(projectPath: string): Promise<void> {
         await this.wsConfig.update(CONFIG_ANALYSIS_PROJECT_TREE_PATH, projectPath);
@@ -174,9 +179,9 @@ export class CSConfigIO {
         const authString: string|undefined = wsConfig.get<string>(CONFIG_HUB_AUTH);
         let authMethod: CSHubAuthenticationMethod|undefined;
         if (authString && (
-                   authString === "anonymous"
-                || authString === "password"
-                || authString === "certificate"
+                   authString === CSHubAuthenticationMethod.anonymous
+                || authString === CSHubAuthenticationMethod.password
+                || authString === CSHubAuthenticationMethod.certificate
             ))
         {
             authMethod = authString;
