@@ -10,7 +10,7 @@
     "qna": "https://support.grammatech.com",
     "repository": {
         "type": "git",
-        "url": ""
+        "url": "https://github.com/GrammaTech/vscode-codesonar"
     },
     "engines": {
         "vscode": "^1.67.0"
