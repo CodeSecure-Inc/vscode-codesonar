@@ -87,27 +87,34 @@ extension_version_ts = env.Command(
 def update_extension_signature(target, source, env):
     """ Replace plugin version info in CHANGELOG.md.in """
     signature_target = target[0]
-    signature_source, pkg_name_source, version_string_source = source
-    pkg_name = pkg_name_source.get_text_contents()
-    pkg_version = version_string_source.get_text_contents()
-    signature = get_signature(pkg_name, pkg_version)
+    (
+        signature_source,
+        sig_version_source,
+        sig_branch_source,
+        sig_commit_source,
+    ) = source
+    sig_version = sig_version_source.get_text_contents()
+    sig_branch = sig_branch_source.get_text_contents()
+    sig_commit = sig_commit_source.get_text_contents()
     file_content_sub(
         signature_target.abspath,
         signature_source.abspath,
         {
-            '$(CSONAR_VSCODE_SIG_VERSION)': signature['Version'],  # includes datestamp
-            '$(CSONAR_VSCODE_GIT_BRANCH)': signature['Branch'],
-            '$(CSONAR_VSCODE_GIT_COMMIT)': signature['Commit'],
+            '$(CSONAR_VSCODE_SIG_VERSION)': sig_version,
+            '$(CSONAR_VSCODE_GIT_BRANCH)': sig_branch,
+            '$(CSONAR_VSCODE_GIT_COMMIT)': sig_commit,
         })
 
+signature = get_signature(csonar_vscode_pkg_name, csonar_vscode_version_str)
 changelog_md = env.Command(
     [
         'CHANGELOG.md'
     ],
     [
         'CHANGELOG.md.in',
-        Value(csonar_vscode_pkg_name),
-        Value(csonar_vscode_version_str),
+        Value(signature['Version']),  # includes datestamp
+        Value(signature['Branch']),
+        Value(signature['Commit']),
     ],
     env.Action(
         update_extension_signature,
