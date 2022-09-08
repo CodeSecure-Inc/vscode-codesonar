@@ -47,15 +47,15 @@ import {
     CSHubAddress,
     CSHubAuthenticationMethod,
     CSProjectFile,
+    CSProjectId,
+    CSAnalysisId,
+    parseCSAnalysisId,
 } from './csonar_ex';
 import * as csConfig from './cs_vscode_config';
 import { 
-    parseCSAnalysisId,
     CSHubClient,
     CSHubClientConnectionOptions,
-    CSProjectId,
     CSProjectInfo,
-    CSAnalysisId,
     CSAnalysisInfo,
     CSHubSarifSearchOptions,
     CSHubVersionCompatibilityInfo,
@@ -308,16 +308,21 @@ async function executeCodeSonarSarifDownload(
     if (hubAddressObject !== undefined) {
         hubClient = new CSHubClient(hubAddressObject, hubClientOptions);
         hubClient.logger = logger;
-        hubCompatibilityInfo = await verifyHubCompatibility(hubClient, extensionVersionInfo);
-        if (hubCompatibilityInfo === undefined
-            && withAnalysisBaseline
-        ) {
-            // No compatibility info means hub is older than CodeSonar 7.1,
-            //  which also means hub is too old to support SARIF difference search:
-            throw new Error("CodeSonar hub version 7.1 or later is required for SARIF analysis comparison.");
-        }
         let signInSucceeded: boolean = false;
+        let hubCompatibilityError: Error|undefined;
         try {
+            // Checking hub compatibility does not require credentials,
+            //  but we could still get a self-signed certificate error,
+            //  and we want to handle that specially in our catch block below:
+            hubCompatibilityInfo = await verifyHubCompatibility(hubClient, extensionVersionInfo);
+            if (hubCompatibilityInfo === undefined
+                && withAnalysisBaseline
+            ) {
+                // No compatibility info means hub is older than CodeSonar 7.1,
+                //  which also means hub is too old to support SARIF difference search:
+                hubCompatibilityError = new Error("CodeSonar hub version 7.1 or later is required for SARIF analysis comparison.");
+                throw hubCompatibilityError;
+            }
             const signInErrorMessage: string|undefined = await verifyHubCredentials(hubClient);
             if (signInErrorMessage !== undefined) {
                 throw Error(signInErrorMessage);
@@ -327,6 +332,8 @@ async function executeCodeSonarSarifDownload(
         catch (e: unknown) {
             const messageHeader: string = "CodeSonar hub sign-in failure";
             const messageBody: string = errorToString(e, { message: "Internal Error"});
+            // Wrap the raised error message with "sign-in" header,
+            //  the user will eventually see this error, and we want to give it context:
             const errorMessage = `${messageHeader}: ${messageBody}`;
             const ecode: ErrorMessageCode|undefined = errorToMessageCode(e);
             const signinError: Error = new Error(errorMessage);
@@ -334,6 +341,12 @@ async function executeCodeSonarSarifDownload(
                     || ecode === SELF_SIGNED_CERT_IN_CHAIN_CODE
             ) {
                 certificateNotTrustedError = signinError;
+            }
+            else if (e === hubCompatibilityError) {
+                // Don't wrap error since this isn't really a sign-in error;
+                //  note that hubCompatibilityError could be for a non-trusted certificate,
+                //  but in that case, we want the previous condition to handle it.
+                throw e;
             }
             else if (e instanceof OperationCancelledError) {
                 // Don't wrap this error with a sign-in error;

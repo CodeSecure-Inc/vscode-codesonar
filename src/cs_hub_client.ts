@@ -31,6 +31,10 @@ import {
     CSHubAddress,
     CSHubAuthenticationMethod,
     CSHubUserKey,
+    CSAnalysisId,
+    CSProjectId,
+    parseCSAnalysisId,
+    parseCSProjectId,
 } from './csonar_ex';
 
 
@@ -38,9 +42,6 @@ const FORM_URLENCODED_CONTENT_TYPE: string = "application/x-www-form-urlencoded"
 
 const RESPONSE_TRY_PLAINTEXT: string = "response_try_plaintext";
 
-type CSHubRecordId = string;
-export type CSAnalysisId = CSHubRecordId;
-export type CSProjectId = CSHubRecordId;
 
 export interface CSProjectInfo {
     id: CSProjectId;
@@ -174,21 +175,6 @@ function encodeCSSearchStringLiteral(s: string): string {
     charUnits.push(QUOTE);
 
     return charUnits.join("");
-}
-
-/** Convert a record ID (probably originating from JSON) into a CSHubRecordId type. */
-function parseCSHubRecordId(recordId: string|number): CSHubRecordId {
-    return recordId.toString();
-}
-
-/** Convert a project ID (probably originating from JSON) into a CSProjectId type. */
-export function parseCSProjectId(projectId: string|number): CSProjectId {
-    return parseCSHubRecordId(projectId);
-}
-
-/** Convert an analysis ID (probably originating from JSON) into a CSAnalysisId type. */
-export function parseCSAnalysisId(analysisId: string|number): CSAnalysisId {
-    return parseCSHubRecordId(analysisId);
 }
 
 /** Parse a hub query or post-data parameter as a boolean value. */
@@ -711,7 +697,7 @@ export class CSHubClient {
                 const projectPath: string|undefined = row["Path"];
                 let projectId: CSProjectId|undefined;
                 if (projectIdNum !== undefined) {
-                    projectId = projectIdNum.toString();
+                    projectId = parseCSProjectId(projectIdNum);
                 }
                 if (projectId !== undefined 
                     && projectName !== undefined
@@ -743,16 +729,17 @@ export class CSHubClient {
             // Parse ID out of "url" item as a string:
             const analysisIdRegExp: RegExp = new RegExp("/analysis/(\\d+)\\.json");
             for (let row of respRows) {
-                let analysisId: string|undefined;
+                let analysisIdString: string|undefined;
                 const analysisUrlString: string|undefined = row["url"];
                 const analysisName: string|undefined = row["Analysis"];
                 if (analysisUrlString) {
                     const analysisIdMatch = analysisUrlString.match(analysisIdRegExp);
                     if (analysisIdMatch && analysisIdMatch.length > 1) {
-                        analysisId = analysisIdMatch[1];
+                        analysisIdString = analysisIdMatch[1];
                     }
                 }
-                if (analysisId !== undefined && analysisName !== undefined) {
+                if (analysisIdString !== undefined && analysisName !== undefined) {
+                    const analysisId: CSAnalysisId = parseCSAnalysisId(analysisIdString);
                     analysisInfoArray.push({
                         id: analysisId,
                         name: analysisName,

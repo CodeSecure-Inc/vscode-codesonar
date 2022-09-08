@@ -14,10 +14,43 @@ export enum CSHubAuthenticationMethod {
     certificate = "certificate",
 }
 
+type CSHubRecordId = string;
+export type CSAnalysisId = CSHubRecordId;
+export type CSProjectId = CSHubRecordId;
+
+
 export const PRJ_DIR_EXT: string = ".prj_files";
 export const PRJ_FILE_EXT: string = ".prj";
 
 const AID_FILE_NAME: string = "aid.txt";
+
+// In JavaScript: (2**53 === 2**53+1)
+const MAX_CSHUB_RECORD_ID_NUMBER: number = 2**53 - 1;
+
+/** Convert a record ID (probably originating from JSON) into a CSHubRecordId type. */
+function parseCSHubRecordId(recordId: string|number|bigint): CSHubRecordId {
+    if (typeof recordId === "number") {
+        // It is theoretically possible to get an ID in JSON
+        //  that is too large to be accurately represented as an integer.
+        //  If we don't use a non-standard JSON parser that reads ID numbers as bigint,
+        //  then we won't be able to handle these ID numbers.
+        if (recordId > MAX_CSHUB_RECORD_ID_NUMBER) {
+            throw new Error(`CodeSonar hub ID value ${recordId} is too large to be accurately represented as a number type.`);
+        }
+    }
+    // We represent IDs as string since we want to treat them abstractly, without numerical properties (or side-effects).
+    return recordId.toString();
+}
+
+/** Convert a project ID (probably originating from JSON) into a CSProjectId type. */
+export function parseCSProjectId(projectId: string|number|bigint): CSProjectId {
+    return parseCSHubRecordId(projectId);
+}
+
+/** Convert an analysis ID (probably originating from JSON) into a CSAnalysisId type. */
+export function parseCSAnalysisId(analysisId: string|number|bigint): CSAnalysisId {
+    return parseCSHubRecordId(analysisId);
+}
 
 
 /** An object to help with finding .prj files. */
@@ -59,6 +92,7 @@ export class CSProjectFile {
         return analysisId;  
     }
 }
+
 
 /** A parsed CodeSonar hub address.
  *  
