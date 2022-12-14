@@ -145,12 +145,19 @@ function normalizeProtocolString(protocol: string): string {
 
 /** Substitute for NodeJS url.urlToHttpOptions() since it is not always available. */
 function urlToHttpOptions(url: URL): HTTPRequestOptions {
+    // url.protocol name has a colon ':' char at the end,
+    //  normalized protocol name does not.
+    //  The HTTPS_PROTOCOL constant is normalized,
+    //   the HTTPRequestOptions.protocol property is expected to end with a colon char.
+    const protocolNormalized: string = normalizeProtocolString(url.protocol);
+    const portString: string = url.port;
+    const portNum: number = (portString) ? parseInt(portString)
+                : ((protocolNormalized === HTTPS_PROTOCOL) ? HTTPS_DEFAULT_PORT : HTTP_DEFAULT_PORT);
     let options: HTTPRequestOptions = {
             protocol: url.protocol,
             hostname: url.hostname,
             path: url.pathname,
-            port: (url.port) ? parseInt(url.port) 
-                            : ((url.protocol === HTTPS_PROTOCOL) ? HTTPS_DEFAULT_PORT : HTTP_DEFAULT_PORT),
+            port: portNum,
         };
     if (url.search) {
         options.path += url.search;
@@ -278,6 +285,8 @@ export class HTTPClientConnection {
 
     public logger: Logger|undefined;
 
+    public bearerToken: string|undefined;
+
     constructor(options: HTTPClientConnectionOptions|URL|string) {
         this.protocol = HTTP_PROTOCOL;
         this.port = HTTP_DEFAULT_PORT;
@@ -301,9 +310,11 @@ export class HTTPClientConnection {
             const protocol: string = normalizeProtocolString(options2.protocol);
             if (protocol === HTTPS_PROTOCOL) {
                 this.protocol = HTTPS_PROTOCOL;
+                this.port = HTTPS_DEFAULT_PORT;
             }
             else if (protocol === HTTP_PROTOCOL) {
                 this.protocol = HTTP_PROTOCOL;
+                this.port = HTTP_DEFAULT_PORT;
             }
             else {
                 throw new Error(`Unknown protocol ${options2.protocol}`);
@@ -418,6 +429,12 @@ export class HTTPClientConnection {
         const nowMilliseconds = Date.now();
         this.evictExpiredCookies(nowMilliseconds);
         const cookies: string[] = this.getRequestCookies(targetUrl);
+        if (this.bearerToken) {
+            if (httpOptions.headers === undefined) {
+                httpOptions.headers = {};
+            }
+            httpOptions.headers['Authorization'] = 'Bearer ' + this.bearerToken;
+        }
         if (options) {
             if (options.method) {
                 httpOptions.method = options.method;
@@ -426,7 +443,10 @@ export class HTTPClientConnection {
                 httpOptions.timeout = options.timeout;
             }
             if (options.headers) {
-                httpOptions.headers = options.headers;
+                if (httpOptions.headers === undefined) {
+                    httpOptions.headers = {};
+                }
+                Object.assign(httpOptions.headers, options.headers);
             }
             if (options.dataEncoding) {
                 dataEncoding = options.dataEncoding;
@@ -617,7 +637,7 @@ export class HTTPClientConnection {
                 passphrasePromise = this._requestPassphrase();
             }
             else {
-                passphrasePromise = Promise<string|undefined>.resolve(this._passphrase);
+                passphrasePromise = Promise.resolve(this._passphrase);
             }
             passphrasePromise.then(passphraseCallback).catch(reject);
         });

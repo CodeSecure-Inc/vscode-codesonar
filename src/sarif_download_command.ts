@@ -53,11 +53,13 @@ import {
 } from './csonar_ex';
 import * as csConfig from './cs_vscode_config';
 import { 
+    getHubCapabilityInfo,
     CSHubClient,
     CSHubClientConnectionOptions,
     CSProjectInfo,
     CSAnalysisInfo,
     CSHubSarifSearchOptions,
+    CSHubCapabilityInfo,
     CSHubVersionCompatibilityInfo,
     CSHubClientRequestOptions,
 } from './cs_hub_client';
@@ -68,6 +70,12 @@ const SARIF_EXT_NAME: string = 'sarif';
 const SARIF_EXT: string = '.' + SARIF_EXT_NAME;
 
 const CS_WARN_DIFF_EXT: string = '.new';
+
+/** Maximum number of projects or analyses to show in quickpick.
+ * 
+ *  This is a safety limit to prevent us trying to show an excessive number of results.
+ */
+const MAX_HUB_SEARCH_RESULTS: number = 8192;
 
 interface QuickPickValueItem<T> extends QuickPickItem {
     value: T;
@@ -118,6 +126,8 @@ async function executeCodeSonarSarifDownload(
     const projectConfig: csConfig.CSProjectConfig|undefined = await csConfigIO.readCSProjectConfig();
     const extensionOptions: csConfig.CSExtensionOptions = await csConfigIO.readCSEXtensionOptions();
     const extensionVersionInfo: csConfig.ExtensionVersionInfo = csConfigIO.extensionVersionInfo;
+    const hubClientName: string = extensionVersionInfo.hubClientName;
+    const hubClientVersion: string = extensionVersionInfo.hubProtocolNumber.toString();
     let projectPath: string|undefined;
     let projectId: CSProjectId|undefined;
     let baseAnalysisName: string|undefined;
@@ -221,7 +231,10 @@ async function executeCodeSonarSarifDownload(
     if (hubAddressString) {
         hubAddressObject = new CSHubAddress(hubAddressString);
     }
-    let hubClientOptions: CSHubClientConnectionOptions = {};
+    let hubClientOptions: CSHubClientConnectionOptions = {
+        clientName: hubClientName,
+        clientVersion: hubClientVersion,
+    };
     let hubClient: CSHubClient|undefined;
     if (hubCAFilePath) {
         hubCAFilePath = resolveFilePath(hubCAFilePath);
@@ -263,7 +276,18 @@ async function executeCodeSonarSarifDownload(
         }
         hubUserCertFilePath = resolveFilePath(hubUserCertFilePath);
         hubUserCertKeyFilePath = resolveFilePath(hubUserCertKeyFilePath);
-        hubClientOptions.hubkey = await loadCSHubUserKey(hubUserCertFilePath, hubUserCertKeyFilePath);
+        try {
+            hubClientOptions.hubkey = await loadCSHubUserKey(hubUserCertFilePath, hubUserCertKeyFilePath);
+        } catch (e: unknown) {
+            const ENOENT_PREFIX: string = "ENOENT: ";
+            let errorMessage: string = errorToString(e);
+            if (errorMessage.startsWith(ENOENT_PREFIX)) {
+                // ENOENT means certificate file could not be found.
+                //  This is a common case, but this isn't a very user friendly code, so remove it:
+                errorMessage = errorMessage.substring(ENOENT_PREFIX.length);
+            }
+            throw Error("Could not load certificate: " + errorMessage);
+        }
         if (hubClientOptions.hubkey.keyIsProtected) {
             const captureHubAddressString: string = hubAddressString;
             const captureHubUserCertFilePath: string = hubUserCertFilePath;
@@ -304,7 +328,6 @@ async function executeCodeSonarSarifDownload(
         };
     }
     let certificateNotTrustedError: Error|undefined;
-    let hubCompatibilityInfo: CSHubVersionCompatibilityInfo|undefined;
     if (hubAddressObject !== undefined) {
         hubClient = new CSHubClient(hubAddressObject, hubClientOptions);
         hubClient.logger = logger;
@@ -314,12 +337,11 @@ async function executeCodeSonarSarifDownload(
             // Checking hub compatibility does not require credentials,
             //  but we could still get a self-signed certificate error,
             //  and we want to handle that specially in our catch block below:
-            hubCompatibilityInfo = await verifyHubCompatibility(hubClient, extensionVersionInfo);
-            if (hubCompatibilityInfo === undefined
+            const hubCapabilityInfo: CSHubCapabilityInfo = await verifyHubCompatibility(hubClient);
+            if (!hubCapabilityInfo.sarifSearch
                 && withAnalysisBaseline
             ) {
-                // No compatibility info means hub is older than CodeSonar 7.1,
-                //  which also means hub is too old to support SARIF difference search:
+                // No sarifSearch capability means we cannot do a warning difference search:
                 hubCompatibilityError = new Error("CodeSonar hub version 7.1 or later is required for SARIF analysis comparison.");
                 throw hubCompatibilityError;
             }
@@ -605,15 +627,9 @@ async function executeCodeSonarSarifDownload(
 /** Get compatibility information from hub.  Throw an error if the extension is too old for the hub. */
 async function verifyHubCompatibility(
     hubClient: CSHubClient,
-    extensionVersionInfo: csConfig.ExtensionVersionInfo,
-): Promise<CSHubVersionCompatibilityInfo|undefined> {
-    const hubClientName: string = extensionVersionInfo.hubClientName;
-    const hubClientVersion: string = extensionVersionInfo.hubProtocolNumber.toString();
+): Promise<CSHubCapabilityInfo> {
     const versionCompatibilityInfo: CSHubVersionCompatibilityInfo|undefined =
-        await hubClient.fetchVersionCompatibilityInfo(
-                hubClientName,
-                hubClientVersion,
-            );
+        await hubClient.getVersionCompatibilityInfo();
     if (versionCompatibilityInfo !== undefined
         && versionCompatibilityInfo.clientOK === false
     ) {
@@ -624,7 +640,7 @@ async function verifyHubCompatibility(
         const message: string = `This CodeSonar extension is not compatible with your hub. ${hubMessage}`;
         throw new Error(message);
     }
-    return versionCompatibilityInfo;
+    return getHubCapabilityInfo(versionCompatibilityInfo);
 }
 
 async function requestHubUserKeyPassphrase(
@@ -723,7 +739,7 @@ async function fetchCSProjectRecords(hubClient: CSHubClient, projectPath?: strin
             let requestOptions: CSHubClientRequestOptions = {
                 cancellationSignal: new VSCodeCancellationSignal(cancellationToken),
             };
-            return hubClient.fetchProjectInfo(projectPath, requestOptions);
+            return hubClient.fetchProjectInfo(projectPath, requestOptions, MAX_HUB_SEARCH_RESULTS);
         });   
 }
 
@@ -741,7 +757,7 @@ async function fetchCSAnalysisRecords(hubClient: CSHubClient, projectId: CSProje
             let requestOptions: CSHubClientRequestOptions = {
                 cancellationSignal: new VSCodeCancellationSignal(cancellationToken),
             };
-            return hubClient.fetchAnalysisInfo(projectId, requestOptions);
+            return hubClient.fetchAnalysisInfo(projectId, requestOptions, MAX_HUB_SEARCH_RESULTS);
         });
 }
 

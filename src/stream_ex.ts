@@ -39,3 +39,21 @@ export function readTextStream(inIO: NodeJS.ReadableStream, maxLength?: number|u
             });
         });
 }
+
+
+/** Read a stream to its end and ignore all of its content. */
+export function ignoreStream(inIO: NodeJS.ReadableStream): Promise<void> {
+    return new Promise<void>((
+        resolve: () => void,
+        reject: (e: unknown) => void,
+        ): void => {
+            if (!inIO.readable) {
+                reject(new Error("Text stream is not readable, perhaps it has already been read."));
+            }
+            inIO.on('error', reject
+            ).on('end', (): void => {
+                resolve();
+            });
+            inIO.resume();
+        });
+}

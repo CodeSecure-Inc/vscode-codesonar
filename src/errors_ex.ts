@@ -2,6 +2,8 @@
 
 export type ErrorMessageCode = string;
 
+export const ECONNREFUSED_CODE: ErrorMessageCode = 'ECONNREFUSED';
+export const ECONNRESET_CODE: ErrorMessageCode = 'ECONNRESET';
 export const ENOENT_CODE: ErrorMessageCode = 'ENOENT';
 export const EPROTO_CODE: ErrorMessageCode = 'EPROTO';
 export const DEPTH_ZERO_SELF_SIGNED_CERT_CODE: ErrorMessageCode = 'DEPTH_ZERO_SELF_SIGNED_CERT';
