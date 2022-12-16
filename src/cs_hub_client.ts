@@ -199,7 +199,7 @@ interface CSHubAnalysisRow {
 }
 
 function formatBasicAuthHeaderValue(user: string, password: string): string{
-    return "Basic " + Buffer.from(`${user}:${password}`, 'binary').toString('base64');
+    return "Basic " + Buffer.from(`${user}:${password}`, 'utf8').toString('base64');
 }
 
 /**
