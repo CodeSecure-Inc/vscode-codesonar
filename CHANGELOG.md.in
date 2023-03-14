@@ -2,6 +2,13 @@
 
 This version: $(CSONAR_VSCODE_SIG_VERSION), Commit: $(CSONAR_VSCODE_GIT_COMMIT)
 
+## 1.2.0
+
+* Add support for CodeSonar 7.3 hub API.
+* Removed SARIF whitespace format setting since CodeSonar 7.2 and 7.3 do not support it.
+* Adjust project and analysis quickpick to accommodate longer names.
+* Fix bug with default SARIF file names.
+
 ## 1.1.0
 
 * Add support for CodeSonar 7.2 hub API.

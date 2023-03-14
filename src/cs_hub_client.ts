@@ -105,7 +105,6 @@ export interface CSHubClientRequestOptions {
 /** Options for warning search in SARIF format. */
 export interface CSHubSarifSearchOptions extends CSHubClientRequestOptions {
     warningFilter?: string;
-    indentLength?: number;
     artifactListing?: boolean;
 }
 
@@ -137,6 +136,8 @@ export interface CSHubVersionCompatibilityInfo {
     message?: string;
     capabilities?: {
         openapi?: boolean,
+        gridConfigJson?: boolean,
+        strictQueryParameters?: boolean,
     };
 }
 
@@ -145,6 +146,8 @@ export interface CSHubCapabilityInfo {
     hubVersionString: string;
     hubVersionNumber: number;
     openAPI: boolean;
+    hasGridConfigJson: boolean,
+    hasStrictQueryParameters: boolean,
     resultLimiting: boolean;
     sarifSearch: boolean;
 }
@@ -254,6 +257,8 @@ export function getHubCapabilityInfo(compatibilityInfo: CSHubVersionCompatibilit
             hubVersionString: "",
             hubVersionNumber: 0,
             openAPI: false,
+            hasGridConfigJson: false,
+            hasStrictQueryParameters: false,
             resultLimiting: false,
             sarifSearch: false,
         };
@@ -262,6 +267,12 @@ export function getHubCapabilityInfo(compatibilityInfo: CSHubVersionCompatibilit
         capabilityInfo.hubVersionNumber = compatibilityInfo.hubVersionNumber;
         if (compatibilityInfo?.capabilities?.openapi === true) {
             capabilityInfo.openAPI = true;
+        }
+        if (compatibilityInfo?.capabilities?.gridConfigJson === true) {
+            capabilityInfo.hasGridConfigJson = true;
+        }
+        if (compatibilityInfo?.capabilities?.strictQueryParameters === true) {
+            capabilityInfo.hasStrictQueryParameters = true;
         }
         if (compatibilityInfo.hubVersionNumber > 700) {
             capabilityInfo.resultLimiting = true;
@@ -828,6 +839,8 @@ export class CSHubClient {
             `/command/check_version/${encodeURIComponent(clientName)}/`
             + `?version=${encodeURIComponent(clientVersion)}`
             + `&capability=openapi`
+            + `&capability=gridConfigJson`
+            + `&capability=strictQueryParameters`
         );
         let respResult: CSHubVersionCompatibilityInfo|undefined;
         try {
@@ -909,16 +922,27 @@ export class CSHubClient {
         if (hubCapabilityInfo.openAPI) {
             const paramJson: {
                 "orderBy": Record<string,string>[],
-                "visible": Record<string,boolean>,
+                "visible"?: Record<string,boolean>,
                 "limit"?: number,
+                "columns"?: string[]
             } = {
                 "orderBy": [{"projectId": "ASCENDING"}], 
-                "visible": {"projectId": true, "path": true},
             };
             if (resultCountMaximum !== undefined) {
                 paramJson["limit"] = resultCountMaximum;
             }
-            queryParams["sprjgrid"] = JSON.stringify(paramJson);
+            if (hubCapabilityInfo.hasGridConfigJson) {
+                paramJson["columns"] = [
+                    "projectId",
+                    "project",
+                    "path"
+                ];
+                queryParams["sprjgrid_json"] = JSON.stringify(paramJson);
+            }
+            else {
+                paramJson["visible"] = {"projectId": true, "path": true};
+                queryParams["sprjgrid"] = JSON.stringify(paramJson);
+            }
         }
         else {
             let paramString: string = "[project id.sort:asc][project id.visible:1][path.visible:1]";
@@ -1003,13 +1027,24 @@ export class CSHubClient {
             const paramJson: {
                 "orderBy": Record<string,string>[],
                 "limit"?: number,
+                "columns"?: string[],
             } = {
                 "orderBy": [{"analysisId": "DESCENDING"}]
             };
             if (resultCountMaximum !== undefined) {
                 paramJson["limit"] = resultCountMaximum;
             }
-            queryParams["anlgrid"] = JSON.stringify(paramJson);
+            if (hubCapabilityInfo.hasGridConfigJson) {
+                paramJson["columns"] = [
+                    "analysis",
+                    "url"
+                ];
+                queryParams["anlgrid_json"] = JSON.stringify(paramJson);
+            }
+            else
+            {
+                queryParams["anlgrid"] = JSON.stringify(paramJson);
+            }
         }
         else {
             let paramString: string = "[analysis id.sort:desc]";
@@ -1071,25 +1106,19 @@ export class CSHubClient {
             hubCapabilityInfo: CSHubCapabilityInfo,
             options: CSHubSarifSearchOptions|undefined,
     ): string|undefined {
-        const sarifIndentLength: number|undefined = options?.indentLength;
         const sarifArtifactListing: boolean|undefined = options?.artifactListing;
         const warningFilter: string|undefined = options?.warningFilter;
         let queryParams: Record<string,string> = {};
         if (warningFilter) {
-            queryParams["filter"] = warningFilter;
-        }
-        if (sarifIndentLength !== undefined) {
-            let sarifIndentArg: string = "";
-            if (sarifIndentLength >= 0) {
-                sarifIndentArg = sarifIndentLength.toString();
-            }
-            queryParams["indent"] = sarifIndentArg;
+            // Filter could be integer ID or string name,
+            //  we must encode it as JSON to tell the hub which type we intend:
+            queryParams["filter"] = JSON.stringify(warningFilter);
         }
         if (sarifArtifactListing !== undefined) {
             const sarifArtifactListingArg: string = (sarifArtifactListing) ? "1" : "0";
             queryParams["artifacts"] = sarifArtifactListingArg;
         }
-        if (hubCapabilityInfo.openAPI) {
+        if (hubCapabilityInfo.openAPI !== true) {
             queryParams[RESPONSE_TRY_PLAINTEXT] = CS_HUB_PARAM_TRUE;
         }
 

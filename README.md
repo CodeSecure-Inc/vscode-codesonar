@@ -497,14 +497,3 @@ The available warning filters, and their IDs, will depend on how your
 hub is configured. To see a full list, view the **Saved Searches**
 page of the hub web GUI. Note that the ID column is not displayed by
 default: you will need to use the table menu to add it.
-
-# Explore Some Additional Settings
-
-## Compress the SARIF file during download
-
-You can save some bandwidth by requesting a SARIF file without
-whitespaces from the hub. The compressed file will not be as easy for a human to
-read, but can be up to 50% smaller than the uncompressed version. This
-can speed up downloads for large projects.
-
-![Settings: codesonar.sarifWhitespaceFormat](resources/img/compactsarif.png)

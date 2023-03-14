@@ -596,9 +596,6 @@ async function executeCodeSonarSarifDownload(
         const destinationFilePath: string = destinationUri.fsPath;
         const destinationFileName: string = path.basename(destinationFilePath);
         let sarifSearchOptions: CSHubSarifSearchOptions = {};
-        if (extensionOptions.sarifIndentLength !== undefined) {
-            sarifSearchOptions.indentLength = extensionOptions.sarifIndentLength;
-        }
         if (warningFilter !== undefined) {
             sarifSearchOptions.warningFilter = warningFilter;
         }
@@ -784,7 +781,7 @@ async function showProjectQuickPick(projectInfoArray: CSProjectInfo[]): Promise<
     return showQuickPick(
             "Select a Project...",
             sortedProjectInfoArray,
-            ((p: CSProjectInfo): QuickPickItem => ({ label: p.path, description: `/project/${p.id}` }) ),
+            ((p: CSProjectInfo): QuickPickItem => ({ label: `/project/${p.id}`, detail: p.path }) ),
             );
 
 }
@@ -797,7 +794,7 @@ async function showAnalysisQuickPick(
     return showQuickPick(
             placeholder,
             analysisInfoArray,
-            ((a: CSAnalysisInfo): QuickPickItem => ({ label: a.name, description: `/analysis/${a.id}` }) ),
+            ((a: CSAnalysisInfo): QuickPickItem => ({ label: `/analysis/${a.id}`, detail: a.name }) ),
             );
 }
 
@@ -810,13 +807,17 @@ async function showQuickPick<T>(
     const quickPick: QuickPick<QuickPickItem> = window.createQuickPick();
     quickPick.items = values.map(x => {
             const item: QuickPickItem = value2QuickPickItem(x);
-            return {
+            let itemEx: QuickPickValueItem<T> = { 
                 label: item.label,
-                description: item.description,
-                value: x,
+                value: x
             };
+            Object.assign(itemEx, item);
+            return itemEx;
         });
     quickPick.placeholder = placeholder;
+    quickPick.matchOnDescription = true;
+    quickPick.matchOnDetail = true;
+    quickPick.ignoreFocusOut = true;
     return new Promise<T|undefined>((
         resolve: (value: T|undefined) => void,
         reject: (e: any) => void,

@@ -28,11 +28,6 @@ const CONFIG_ANALYSIS_PROJECT_FILE: string = "projectFile";
 const CONFIG_BASE_ANALYSIS_NAME: string = "baselineAnalysis";
 const CONFIG_WARNING_FILTER: string = "warningFilter";
 
-const SARIF_WHITESPACE_FORMAT_INDENTED: string = "indented";
-const SARIF_WHITESPACE_FORMAT_COMPACT: string = "compact";
-
-const SARIF_INDENT_LENGTH: number = 2;
-const SARIF_NO_INDENT_LENGTH: number = -1;
 
 export interface ExtensionVersionInfo {
     versionString: string;
@@ -66,7 +61,6 @@ export interface CSProjectConfig {
 
 export interface CSExtensionOptions {
     autoOpenSarifViewer: boolean;
-    sarifIndentLength?: number;
 }
 
 
@@ -139,18 +133,6 @@ export class CSConfigIO {
         let options: CSExtensionOptions = {
             autoOpenSarifViewer: (wsConfig.get<boolean>("autoOpenSarifViewer") || false),
         };
-        const sarifWhitespaceFormat: string|undefined = wsConfig.get<string>("sarifWhitespaceFormat");
-        if (sarifWhitespaceFormat) {
-            if (sarifWhitespaceFormat === SARIF_WHITESPACE_FORMAT_INDENTED) {
-                options.sarifIndentLength = SARIF_INDENT_LENGTH;
-            }
-            else if (sarifWhitespaceFormat === SARIF_WHITESPACE_FORMAT_COMPACT) {
-                options.sarifIndentLength = SARIF_NO_INDENT_LENGTH;
-            }
-            else {
-                throw Error(`Unrecognized sarifWhitespaceFormat setting: '${sarifWhitespaceFormat}'`);
-            }
-        }
         return options;
     }
 
