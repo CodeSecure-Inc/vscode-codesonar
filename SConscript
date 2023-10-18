@@ -10,7 +10,7 @@ csonar_vscode_pkg_name = 'vscode-codesonar'
 csonar_vscode_version_str = env['CSONAR_VSCODE_VERSION']
 csonar_vscode_protocol_num = env['CSONAR_VSCODE_HUB_PROTOCOL_VERSION']
 
-CSO_VSCODE_PUBLIC_DOC_URL_BASE = 'https://github.com/GrammaTech/vscode-codesonar/raw/v1-doc/'
+CSO_VSCODE_PUBLIC_DOC_URL_BASE = 'https://github.com/CodeSecure-Inc/vscode-codesonar/raw/v1.3-doc/'
 
 
 def get_signature(package_name, version):

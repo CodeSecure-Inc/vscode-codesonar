@@ -128,7 +128,8 @@ export function encodeURIQuery(queryObject: any): string {
             else {
                 s = JSON.stringify(v);
             }
-            queryParts.push(k + URL_SEARCH_KEY_SEP + s);
+            s = encodeURIComponent(k) + URL_SEARCH_KEY_SEP + encodeURIComponent(s);
+            queryParts.push(s);
         }
     }
     return queryParts.join(URL_SEARCH_ITEM_SEP);

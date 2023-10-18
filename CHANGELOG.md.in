@@ -2,6 +2,10 @@
 
 This version: $(CSONAR_VSCODE_SIG_VERSION), Commit: $(CSONAR_VSCODE_GIT_COMMIT)
 
+## 1.3.0
+
+* Add support for CodeSonar 8.0 user session pools.
+
 ## 1.2.0
 
 * Add support for CodeSonar 7.3 hub API.

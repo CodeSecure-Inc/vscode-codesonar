@@ -3,14 +3,14 @@
     "displayName": "CodeSonar",
     "description": "CodeSonar Static Analysis",
     "version": "$(CSO_VSCODE_VERSION)",
-    "publisher": "GrammaTech",
-    "icon": "resources/grammatech.red-g-border.128x128.png",
+    "publisher": "CodeSecure",
+    "icon": "resources/codesecure.mark_rgb_square.128x128px.png",
     "license": "SEE LICENSE IN LICENSE.txt",
-    "homepage": "https://www.grammatech.com/codesonar",
-    "qna": "https://support.grammatech.com",
+    "homepage": "https://links.codesonar.com/product-home/",
+    "qna": "https://links.codesonar.com/support/",
     "repository": {
         "type": "git",
-        "url": "https://github.com/GrammaTech/vscode-codesonar"
+        "url": "https://links.codesonar.com/integrations/vscode/dev/"
     },
     "engines": {
         "vscode": "^1.70.1"

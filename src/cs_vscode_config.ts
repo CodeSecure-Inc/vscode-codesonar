@@ -13,6 +13,8 @@ import {
 
 
 const CSHUB_CLIENT_NAME: string = "vscode";
+const CSHUB_SESSION_POOL_NAME: string = "vscode+codesonar";
+const CSHUB_SESSION_HOST_NAME: string = "vscode+codesonar";
 
 const CONFIG_SECTION: string = "codesonar";
 const CONFIG_HUB_ADDR: string = "hubAddress";
@@ -44,6 +46,8 @@ export interface CSHubConfig {
     hubpwfile?: string;
     hubcert?: string;
     hubkey?: string;
+    sessionPoolName?: string;
+    sessionHostName?: string;
 }
 
 export interface CSAnalysisConfig {
@@ -187,6 +191,8 @@ export class CSConfigIO {
                 hubpwfile: wsConfig.get<string>(CONFIG_HUB_PWFILE) || undefined,
                 hubcert: wsConfig.get<string>(CONFIG_HUB_CERT) || undefined,
                 hubkey: wsConfig.get<string>(CONFIG_HUB_KEY) || undefined,
+                sessionPoolName: CSHUB_SESSION_POOL_NAME,
+                sessionHostName: CSHUB_SESSION_HOST_NAME,
             }
         };
     }

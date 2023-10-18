@@ -1,6 +1,6 @@
 # CodeSonar Extension for Visual Studio Code
 
-This extension from [GrammaTech](https://www.grammatech.com) provides
+This extension from [CodeSecure](https://www.codesecure.com) provides
 access to static code analysis results from a *CodeSonar* hub inside
 Visual Studio Code.
 
@@ -10,7 +10,7 @@ Before you begin, make sure you have all of the following installed on your loca
 
 - A functioning build environment. If your build tools are not already in
   in your `PATH`, add them now.
-- [CodeSonar](https://www.grammatech.com/products/source-code-analysis)
+- [CodeSonar](https://links.codesonar.com/product-home/)
   version `7.1p0` or later.
 - VS Code version `1.70.1` or later.
 - The VS Code [Sarif
@@ -178,12 +178,15 @@ For full documentation of all command line options, see the CodeSonar manual.
      build.
    - If this is the first time you are building a project and you have
      not yet specified whether you want to upload anonymized usage
-     statistics to GrammaTech, CodeSonar will ask "Send anonymous
-     usage statistics to GrammaTech?" now.  Press `y` to opt in; `n` to
-     opt out.
+     statistics to CodeSecure, CodeSonar will ask "Send anonymous
+     usage statistics to CodeSecure?" now.  Press `y` to opt in; `n` to
+     opt out.  (If you are using CodeSonar 7.4 or earlier, this prompt
+     will refer to "GrammaTech" instead of "CodeSecure".)
    - [Windows Vista or later only] If User Account Control is enabled,
      your system may display a dialog to request permission for `cs_uac_daemonize.exe`
-     from GrammaTech, Inc to continue. Click **Continue** to proceed.
+     from CodeSecure, Inc to continue. Click **Continue** to proceed.
+     (If you are using CodeSonar 7.4 or earlier, this dialog will refer
+     to "GrammaTech" instead of "CodeSecure".)
    - [Windows only] If you are running CodeSonar with services, a
      services authentication dialog may open. Enter your username and
      password, and click **OK** to authenticate the service.

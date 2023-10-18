@@ -95,6 +95,8 @@ export interface CSHubClientConnectionOptions extends CSHubAuthenticationOptions
     clientVersion?: string;
     cafile?: string;
     timeout?: number;
+    sessionPoolName?: string;
+    sessionHostKey?: string;
 }
 
 /** Per-request options. */
@@ -108,6 +110,12 @@ export interface CSHubSarifSearchOptions extends CSHubClientRequestOptions {
     artifactListing?: boolean;
 }
 
+/** String encoded boolean value used for hub OpenAPI forms. */
+type CSHubAPIFormBoolean = "true" | "false";
+const CS_HUB_API_FORM_TRUE: CSHubAPIFormBoolean = "true";
+const CS_HUB_API_FORM_FALSE: CSHubAPIFormBoolean = "false";
+
+/** String encoded boolean value used for pre-OpenAPI URL query parameters and forms. */
 type CSHubParamBoolean = "0" | "1";
 type CSHubSignInFormBoolean = CSHubParamBoolean;
 
@@ -138,6 +146,7 @@ export interface CSHubVersionCompatibilityInfo {
         openapi?: boolean,
         gridConfigJson?: boolean,
         strictQueryParameters?: boolean,
+        userSessionPool?: boolean,
     };
 }
 
@@ -150,6 +159,17 @@ export interface CSHubCapabilityInfo {
     hasStrictQueryParameters: boolean,
     resultLimiting: boolean;
     sarifSearch: boolean;
+    userSessionPool: boolean;
+}
+
+interface CSHubUserSessionOptions {
+    /* eslint-disable @typescript-eslint/naming-convention */
+    key: CSHubSessionKeyType,
+    pool?: string;
+    keepalive?: CSHubAPIFormBoolean;
+    overflow_ok?: CSHubAPIFormBoolean;
+    note?: string;
+    /* eslint-enable @typescript-eslint/naming-convention */
 }
 
 interface CSHubJsonErrorResponse {
@@ -261,6 +281,7 @@ export function getHubCapabilityInfo(compatibilityInfo: CSHubVersionCompatibilit
             hasStrictQueryParameters: false,
             resultLimiting: false,
             sarifSearch: false,
+            userSessionPool: false,
         };
     if (compatibilityInfo) {
         capabilityInfo.hubVersionString = compatibilityInfo.hubVersion;
@@ -273,6 +294,9 @@ export function getHubCapabilityInfo(compatibilityInfo: CSHubVersionCompatibilit
         }
         if (compatibilityInfo?.capabilities?.strictQueryParameters === true) {
             capabilityInfo.hasStrictQueryParameters = true;
+        }
+        if (compatibilityInfo?.capabilities?.userSessionPool === true) {
+            capabilityInfo.userSessionPool = true;
         }
         if (compatibilityInfo.hubVersionNumber > 700) {
             capabilityInfo.resultLimiting = true;
@@ -305,6 +329,7 @@ export class CSHubRequestError extends HTTPStatusError {
 export class CSHubClient {
     private hubAddress: CSHubAddress;
     private options: CSHubClientConnectionOptions;
+    private readonly sessionKeyType: CSHubSessionKeyType = CSHubSessionKeyType.bearerToken;
     private httpConn: HTTPClientConnection|undefined;
     // undefined means we haven't tried to fetch compatibility info yet,
     // null means we tried to fetch it and we got a 404:
@@ -600,6 +625,27 @@ export class CSHubClient {
         httpConn.clearCookies();
     }
 
+    /** Get URL-encoded request body data for OpenAPI sign-in sessions */
+    private getSessionSignInRequestData(
+        sessionKeyType: CSHubSessionKeyType,
+        hubCapabilityInfo: CSHubCapabilityInfo,
+    ): string {
+        const sessionPoolName: string|undefined = this.options.sessionPoolName;
+        const sessionHostKey: string|undefined = this.options.sessionHostKey;
+        let sessionOptions: CSHubUserSessionOptions = {
+            key: sessionKeyType,
+        };
+        if (hubCapabilityInfo.userSessionPool && sessionPoolName) {
+            sessionOptions.pool = sessionPoolName;
+            sessionOptions.keepalive = CS_HUB_API_FORM_TRUE;
+            sessionOptions.overflow_ok = CS_HUB_API_FORM_FALSE;
+            if (sessionHostKey) {
+                sessionOptions.note = sessionHostKey;
+            }
+        }
+        return encodeURIQuery(sessionOptions);
+    }
+
     /** Try to sign-in to the hub using hub client credentials.
      *
      *  Returns an sign-in failure message if the sign-in was rejected.
@@ -618,7 +664,7 @@ export class CSHubClient {
         //   but that doesn't seem to work.
         //  We will do both just to be safe.
         const signInUrlPath700: string = `/?${RESPONSE_TRY_PLAINTEXT}=${CS_HUB_PARAM_TRUE}`;
-        const sessionKeyType: CSHubSessionKeyType = CSHubSessionKeyType.bearerToken;
+        const sessionKeyType: CSHubSessionKeyType = this.sessionKeyType;
         const connOptions: CSHubClientConnectionOptions = this.options;
         let httpOptions: HTTPClientRequestOptions|undefined = this.toHTTPClientRequestOptions(options);
         let signInUrlPath: string|undefined = undefined;
@@ -635,7 +681,7 @@ export class CSHubClient {
             }
             if (hubCapabilityInfo.openAPI) {
                 signInUrlPath = "/session/create-tls-client-certificate/";
-                signInData = `key=${sessionKeyType}`;
+                signInData = this.getSessionSignInRequestData(sessionKeyType, hubCapabilityInfo);
                 isSessionResource = true;
             }
             else {
@@ -690,7 +736,7 @@ export class CSHubClient {
                     // swap:
                     httpOptions = httpOptions2;
                     signInUrlPath = "/session/create-basic-auth/";
-                    signInData = `key=${sessionKeyType}`;
+                    signInData = this.getSessionSignInRequestData(sessionKeyType, hubCapabilityInfo);
                     isSessionResource = true;
                 }
                 else {
@@ -715,7 +761,7 @@ export class CSHubClient {
             httpConn.bearerToken = undefined;
             if (hubCapabilityInfo.openAPI) {
                 signInUrlPath = "/session/create-anonymous/";
-                signInData = `key=${sessionKeyType}`;
+                signInData = this.getSessionSignInRequestData(sessionKeyType, hubCapabilityInfo);
                 isSessionResource = true;
             } else {
                 // For older hubs, we just needed to drop any session cookies that we might already have.
@@ -771,6 +817,49 @@ export class CSHubClient {
             }
         }
         return signInMessage;
+    }
+
+    /** Sign-out current client session on hub. */
+    public async signOut(): Promise<void> {
+        const httpConn: HTTPClientConnection = await this.getHttpClientConnection();
+        const hubCapabilityInfo: CSHubCapabilityInfo = await this.getHubCapabilityInfo();
+        const signOutUrlPath700: string = `/sign_out.html?${RESPONSE_TRY_PLAINTEXT}=${CS_HUB_PARAM_TRUE}`;
+        const signOutUrlPath: string = "/session/";
+        let httpMethod: string = "GET";
+        let resource: string = signOutUrlPath700;
+        let errorFormat: CSHubResponseFormat = CSHubResponseFormat.text;
+        if (hubCapabilityInfo.openAPI) {
+            resource = signOutUrlPath;
+            httpMethod = "DELETE";
+            errorFormat = CSHubResponseFormat.json;
+        }
+        // Always sign-out if OpenAPI authentication is not supported or if we aren't using a bearerToken,
+        //  this will implicitly cause httpConn to forget its session cookie.
+        // If we are using a bearerToken (OpenAPI only), only sign-out if we actually have a bearer token.
+        if (!hubCapabilityInfo.openAPI 
+            || this.sessionKeyType !== CSHubSessionKeyType.bearerToken
+            || httpConn.bearerToken
+        ) {
+            const httpOptions: HTTPClientRequestOptions = { 
+                method: httpMethod,
+                headers: {
+                    /* eslint-disable @typescript-eslint/naming-convention */
+                    "Accept-Charset": "utf-8",
+                    /* eslint-enable @typescript-eslint/naming-convention */
+                },
+            };
+            this.log(`${httpMethod} ${resource}`);
+            const resp: HTTPReceivedResponse = await httpConn.request(resource, httpOptions);
+            if (resp.status.code !== HTTP_OK) {
+                this.log(`HTTP Status: ${resp.status}`);
+                const hubError: Error = await this.createHubRequestError(resp, errorFormat);
+                throw hubError;
+            }
+            await ignoreStream(resp.body);
+    
+            this.log("Signed-out hub session.");
+        }
+        httpConn.bearerToken = undefined;
     }
 
     /** Fetch a raw resource from the hub. */
@@ -841,6 +930,7 @@ export class CSHubClient {
             + `&capability=openapi`
             + `&capability=gridConfigJson`
             + `&capability=strictQueryParameters`
+            + `&capability=userSessionPool`
         );
         let respResult: CSHubVersionCompatibilityInfo|undefined;
         try {
@@ -873,7 +963,7 @@ export class CSHubClient {
     ): Promise<CSHubVersionCompatibilityInfo|undefined> {
         let hubVersionCompatibilityInfo: CSHubVersionCompatibilityInfo|undefined;
         if (this.hubVersionCompatibilityInfo === null) {
-            // null signals that we have already tried to fetch the data,
+            // null signals that we have already tried to fetch the data and the server doesn't have it,
             //  we won't try to fetch it again.
             // Return undefined to the caller;
             //  they don't need to know how we are using "null" internally.

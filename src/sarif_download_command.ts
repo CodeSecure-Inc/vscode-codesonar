@@ -3,7 +3,9 @@ import {
     createWriteStream as createFileWriteStream,
     unlink as unlinkFile,
 } from 'fs';
+import * as os from 'os';
 import * as path from 'path';
+import * as process from 'process';
 import { Readable } from 'stream';
 
 import {
@@ -128,6 +130,13 @@ async function executeCodeSonarSarifDownload(
     const extensionVersionInfo: csConfig.ExtensionVersionInfo = csConfigIO.extensionVersionInfo;
     const hubClientName: string = extensionVersionInfo.hubClientName;
     const hubClientVersion: string = extensionVersionInfo.hubProtocolNumber.toString();
+    const hubSessionPoolName: string|undefined = projectConfig?.hub?.sessionPoolName;
+    const hostMachineName: string = os.hostname();
+    const hostProcessName: string = path.basename(process.execPath);
+    const hubSessionHostKeyPrefix: string = `${hostMachineName}/${hostProcessName}:${process.pid}`;
+    const hubSessionHostKey: string|undefined = (projectConfig?.hub?.sessionHostName) 
+            ?  `${hubSessionHostKeyPrefix}/${projectConfig?.hub?.sessionHostName}`
+            : hubSessionHostKeyPrefix;
     let projectPath: string|undefined;
     let projectId: CSProjectId|undefined;
     let baseAnalysisName: string|undefined;
@@ -234,6 +243,8 @@ async function executeCodeSonarSarifDownload(
     let hubClientOptions: CSHubClientConnectionOptions = {
         clientName: hubClientName,
         clientVersion: hubClientVersion,
+        sessionPoolName: hubSessionPoolName,
+        sessionHostKey: hubSessionHostKey,
     };
     let hubClient: CSHubClient|undefined;
     if (hubCAFilePath) {
@@ -618,6 +629,9 @@ async function executeCodeSonarSarifDownload(
         else {
             window.showInformationMessage(`Downloaded CodeSonar Analysis to '${destinationFileName}'`);
         }
+    }
+    if (hubClient !== undefined) {
+        await hubClient.signOut();
     }
 }
 
